@@ -1,4 +1,7 @@
 # .github/workflows/stage10-learn.yml — merge + post-merge QA + learning loop
+# v4.5 fix: removed the name-only step left by the v4.3 npm-ci insert
+# (GitHub rejected the file: "not enough info" at that step); TEST_COMMAND now
+# has an npm-test fallback so an unset repo var cannot blank out run:.
 # v4.1 fix: the validate job now requires merged == true (it previously ran
 # post-merge QA on PRs that were closed WITHOUT merging).
 name: stage10-learn
@@ -60,13 +63,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: main }
-      - name: Full master build (not just the PR diff)
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - name: Install dependencies
         run: npm ci
-      - name: Post-merge full test suite
-        run: ${{ vars.TEST_COMMAND }}
+      - name: Post-merge full test suite (full master build, not just the PR diff)
+        run: ${{ vars.TEST_COMMAND || 'npm test' }}
       - name: Smoke + e2e pack on touched modules and critical flows
         run: python scripts/postmerge_smoke.py --pr ${{ github.event.pull_request.number }} --env production
       - name: Health check + auto-rollback if flag-guarded

@@ -1,4 +1,7 @@
 # .github/workflows/ci-pr-gates.yml — stage 6: PR + CI gates, then swarm dispatch
+# v4.5: gitleaks-action v2 now requires GITHUB_TOKEN passed explicitly (breaking
+# change); TEST/LINT/COVERAGE command vars get fallbacks so an unset repo var
+# cannot blank out run: (GitHub rejects expression-only run: when it is empty).
 # v4.3: added npm ci install step (pack bug #14 — runners had no node_modules).
 # v4.1 fixes: GH_TOKEN context (was github.GITHUB_TOKEN — invalid, always empty);
 # swarm dispatch now targets the ONE parameterized review-agent.yml with a persona
@@ -30,18 +33,20 @@ jobs:
         run: npm ci
 
       - name: Tests
-        run: ${{ vars.TEST_COMMAND }}          # must pass; flaky = blocked
+        run: ${{ vars.TEST_COMMAND || 'npm test' }}   # must pass; flaky = blocked
 
       - name: Lint + format
-        run: ${{ vars.LINT_COMMAND }}
+        run: ${{ vars.LINT_COMMAND || 'npm run lint' }}
 
       - name: Coverage floor
         run: |
-          ${{ vars.COVERAGE_COMMAND }} || true
+          ${{ vars.COVERAGE_COMMAND || 'npm run coverage' }} || true
           python scripts/check_coverage_floor.py --min 70
 
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2        # fail on any leak in diff
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # required by gitleaks-action v2 (breaking change)
 
       - name: Diff-size cap
         # >600 changed lines (excluding generated/tests/lockfiles) => auto-blocked
