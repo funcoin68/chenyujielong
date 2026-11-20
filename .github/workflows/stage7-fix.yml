@@ -54,8 +54,8 @@ jobs:
         env:
           GH_TOKEN: "${{ secrets.AGENT_PUSH_TOKEN }}"
         run: |
-          ${{ vars.TEST_COMMAND }}
-          ${{ vars.LINT_COMMAND }}
+          ${{ vars.TEST_COMMAND || 'npm test' }}
+          ${{ vars.LINT_COMMAND || 'npm run lint' }}
           git add -A
           git diff --cached --quiet || git commit -m "agent: address review comments (round ${{ inputs.round }})"
           git push

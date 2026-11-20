@@ -3,6 +3,14 @@
 # v4.1 fixes: git identity on the ephemeral runner (commit used to fail silently),
 # read-only default token (write comes only from the branch-scoped AGENT_PUSH_TOKEN),
 # idempotency pre-check, Kimi Code endpoint + model pinned.
+# v4.6 bug #21: resume-or-create the agent branch (plain push from a fresh
+# branch off main is a non-fast-forward on re-run) + --force-with-lease push +
+# loud failure when the agent produced no changes (a no-op commit had pushed
+# only a __pycache__ .pyc). TEST/LINT vars get npm fallbacks.
+# v4.4 bug #19: --permission-mode bypassPermissions on the claude step - a headless
+# runner cannot answer interactive write approvals, so every Write/Edit was denied.
+# Blast radius stays small: this step env holds only KIMI_CODE_API_KEY; pushes use the
+# branch-scoped AGENT_PUSH_TOKEN and the ruleset still blocks main.
 name: stage5-implement
 on:
   workflow_dispatch:
@@ -37,9 +45,21 @@ jobs:
           GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
         run: python scripts/open_pr.py --ticket "${{ inputs.ticket_key }}" --check
 
-      - name: Create work branch
+      - name: Create or resume work branch
         if: steps.dup.outputs.exists != 'true'
-        run: git checkout -b "agent/${{ inputs.ticket_key }}"
+        run: |
+          # Idempotent re-run (bug #21): if an earlier attempt already pushed
+          # agent/<ticket>, resume from it instead of branching fresh off main -
+          # a plain push from a fresh branch is a non-fast-forward and dies with
+          # "fetch first". agent/* branches are agent-owned, so rebasing onto
+          # origin/main is safe and keeps history linear.
+          git fetch origin "agent/${{ inputs.ticket_key }}" || true
+          if git rev-parse --verify "origin/agent/${{ inputs.ticket_key }}" >/dev/null 2>&1; then
+            git checkout -B "agent/${{ inputs.ticket_key }}" "origin/agent/${{ inputs.ticket_key }}"
+            git rebase origin/main || git rebase --abort
+          else
+            git checkout -b "agent/${{ inputs.ticket_key }}"
+          fi
 
       - name: Fetch ticket + PINNED proposal + context
         if: steps.dup.outputs.exists != 'true'
@@ -69,8 +89,8 @@ jobs:
       - name: Run repo verification
         if: steps.dup.outputs.exists != 'true'
         run: |
-          ${{ vars.TEST_COMMAND }}
-          ${{ vars.LINT_COMMAND }}
+          ${{ vars.TEST_COMMAND || 'npm test' }}
+          ${{ vars.LINT_COMMAND || 'npm run lint' }}
 
       - name: Push branch + open PR
         if: steps.dup.outputs.exists != 'true'
@@ -81,7 +101,15 @@ jobs:
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
         run: |
           git add -A
-          git diff --cached --quiet || git commit -m "agent: ${{ inputs.ticket_key }} implementation"
-          git push -u origin "agent/${{ inputs.ticket_key }}"
+          # Refuse to open an empty PR: if the agent wrote nothing (e.g. model
+          # error, write-block), fail loudly instead of pushing noise.
+          if git diff --cached --quiet; then
+            echo "::error::Agent produced no changes - not opening an empty PR. Check the Implement step log." >&2
+            exit 1
+          fi
+          git commit -m "agent: ${{ inputs.ticket_key }} implementation"
+          # --force-with-lease: agent-owned branch; overwrites only if the remote
+          # is exactly what we fetched (rebase path), never clobbers human work.
+          git push --force-with-lease -u origin "agent/${{ inputs.ticket_key }}"
           python scripts/open_pr.py --ticket "${{ inputs.ticket_key }}"             --base main --head "agent/${{ inputs.ticket_key }}"
           python scripts/jira_transition.py "${{ inputs.ticket_key }}" "In review"             --comment "Implementation PR opened. Status: In review."
