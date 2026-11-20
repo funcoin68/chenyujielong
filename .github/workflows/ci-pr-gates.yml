@@ -1,4 +1,8 @@
 # .github/workflows/ci-pr-gates.yml — stage 6: PR + CI gates, then swarm dispatch
+# v4.8: explicit permissions block (bug #23) — repo default GITHUB_TOKEN is
+# read-only, so the packet-comment/label writes 403'd with "Resource not
+# accessible by integration". issues:write covers PR comments + labels (both
+# are issues-API endpoints).
 # v4.6: checkout fetch-depth 0 in the gates job (bug #22).
 # v4.5: gitleaks-action v2 now requires GITHUB_TOKEN passed explicitly (breaking
 # change); TEST/LINT/COVERAGE command vars get fallbacks so an unset repo var
@@ -20,6 +24,11 @@ on:
 concurrency:
   group: ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
+
+permissions:
+  contents: read          # checkout + gitleaks diff
+  pull-requests: read     # scope guard reads PR body + changed-file list
+  issues: write           # packet comment + reviewed-* labels (issues API, bug #23)
 
 jobs:
   gates:

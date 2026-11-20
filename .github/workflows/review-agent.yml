@@ -1,5 +1,7 @@
 # .github/workflows/review-agent.yml — stage 7: ONE parameterized clean-room reviewer
 # Dispatched by stage 6 three times (persona = functional|security|standards).
+# v4.8: added issues:write — maybe_aggregate.py labels/comments via the issues
+# API and would 403 the same way as bug #23 once the swarm reached consensus.
 # v4.1 fixes: agent output captured to a file (verdict previously went to an
 # unparsed stdout); reviewer runs in plan mode so "reviewers never fix" is
 # mechanical; output contract is stdout-only (verdict block + comments JSON fence),
@@ -13,7 +15,7 @@ on:
       persona:    { required: true, type: string }   # functional|security|standards
       risk_tier:  { required: true, type: string }
 
-permissions: { contents: read, pull-requests: write }   # comments only, no push
+permissions: { contents: read, pull-requests: write, issues: write }   # reviews + comments/labels, no push
 
 jobs:
   review:
