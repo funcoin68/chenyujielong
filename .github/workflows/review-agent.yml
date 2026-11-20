@@ -1,0 +1,64 @@
+# .github/workflows/review-agent.yml — stage 7: ONE parameterized clean-room reviewer
+# Dispatched by stage 6 three times (persona = functional|security|standards).
+# v4.1 fixes: agent output captured to a file (verdict previously went to an
+# unparsed stdout); reviewer runs in plan mode so "reviewers never fix" is
+# mechanical; output contract is stdout-only (verdict block + comments JSON fence),
+# parsed by post_review.py; Kimi Code endpoint + k3-256k pinned.
+name: review-agent
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:  { required: true, type: string }
+      ticket_key: { required: true, type: string }
+      persona:    { required: true, type: string }   # functional|security|standards
+      risk_tier:  { required: true, type: string }
+
+permissions: { contents: read, pull-requests: write }   # comments only, no push
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: npm i -g @anthropic-ai/claude-code
+
+      - name: Assemble clean-room context (NO author reasoning)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ vars.JIRA_USER_EMAIL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+        run: |
+          python scripts/fetch_cleanroom_context.py             --pr "${{ inputs.pr_number }}" --ticket "${{ inputs.ticket_key }}" > /tmp/context.md
+          # fetches: ticket spec + packet comment + diff. Excludes by
+          # construction: proposal comments, agent chat, implementation notes.
+
+      - name: Review (k3-256k, plan mode = read-only, hard budget)
+        env:
+          ANTHROPIC_BASE_URL: https://api.kimi.ai/coding
+          ANTHROPIC_API_KEY: ${{ secrets.KIMI_CODE_API_KEY }}
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+        timeout-minutes: 15
+        run: |
+          claude -p --model "${{ vars.REVIEWER_MODEL || 'k3-256k' }}"             --permission-mode plan             --append-system-prompt "$(cat agent/review-${{ inputs.persona }}.md)"             "$(cat /tmp/context.md)" | tee /tmp/review_out.txt
+
+      - name: Post structured review + completion label
+        env:
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        run: |
+          python scripts/post_review.py --pr "${{ inputs.pr_number }}"             --persona "${{ inputs.persona }}"             --output-file /tmp/review_out.txt
+          # parses verdict block + comments JSON from stdout; posts PR review
+          # with inline comments; adds label reviewed-${persona}
+
+      - name: Maybe aggregate (fires exactly once, on the last reviewer)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: python scripts/maybe_aggregate.py --pr "${{ inputs.pr_number }}" --ticket "${{ inputs.ticket_key }}"
+        # exits unless all three reviewed-* labels present. Then:
+        #   any criticals        -> dispatch stage7-fix (round N+1, cap 3)
+        #   no criticals+approve -> consensus-passed label, dispatch stage8b
+        #   conflicting verdicts -> flag human, swarm stops

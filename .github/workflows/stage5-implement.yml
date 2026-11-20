@@ -1,0 +1,85 @@
+# .github/workflows/stage5-implement.yml — stage 5: implementation on agent/* branch
+# Dispatched by Jira Automation when gate 1 ("Approve plan") fires.
+# v4.1 fixes: git identity on the ephemeral runner (commit used to fail silently),
+# read-only default token (write comes only from the branch-scoped AGENT_PUSH_TOKEN),
+# idempotency pre-check, Kimi Code endpoint + model pinned.
+name: stage5-implement
+on:
+  workflow_dispatch:
+    inputs:
+      ticket_key:          { required: true, type: string }
+      proposal_comment_id: { required: true, type: string }
+
+permissions: { contents: read }   # GITHUB_TOKEN stays read-only; push uses AGENT_PUSH_TOKEN (agent/* only)
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: "${{ secrets.AGENT_PUSH_TOKEN }}"
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: npm i -g @anthropic-ai/claude-code
+
+      - name: Git identity (ephemeral runner has none)
+        run: |
+          git config user.name "pipeline-agent"
+          git config user.email "pipeline-agent@users.noreply.github.com"
+
+      - id: dup
+        name: Idempotency — detect existing PR for this ticket
+        env:
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        run: python scripts/open_pr.py --ticket "${{ inputs.ticket_key }}" --check
+
+      - name: Create work branch
+        if: steps.dup.outputs.exists != 'true'
+        run: git checkout -b "agent/${{ inputs.ticket_key }}"
+
+      - name: Fetch ticket + PINNED proposal + context
+        if: steps.dup.outputs.exists != 'true'
+        env:
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ vars.JIRA_USER_EMAIL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+        run: |
+          python scripts/fetch_ticket.py "${{ inputs.ticket_key }}" > /tmp/ticket.json
+          python scripts/fetch_proposal.py "${{ inputs.ticket_key }}"               "${{ inputs.proposal_comment_id }}" > /tmp/proposal.md
+          # hard gate: fetched proposal hash must still match the approved one
+          python scripts/verify_pinned.py "${{ inputs.ticket_key }}" /tmp/proposal.md
+          python scripts/assemble_context.py /tmp/ticket.json > /tmp/context.md
+
+      - name: Implement (k3, normal mode, hard timeout)
+        if: steps.dup.outputs.exists != 'true'
+        env:
+          ANTHROPIC_BASE_URL: https://api.kimi.ai/coding
+          ANTHROPIC_API_KEY: ${{ secrets.KIMI_CODE_API_KEY }}
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+        timeout-minutes: 45
+        run: |
+          claude -p --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --append-system-prompt "$(cat agent/implementation-instructions.md)"             "$(cat /tmp/context.md)
+          APPROVED PROPOSAL (your spec):
+          $(cat /tmp/proposal.md)"
+
+      - name: Run repo verification
+        if: steps.dup.outputs.exists != 'true'
+        run: |
+          ${{ vars.TEST_COMMAND }}
+          ${{ vars.LINT_COMMAND }}
+
+      - name: Push branch + open PR
+        if: steps.dup.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.AGENT_PUSH_TOKEN }}
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ vars.JIRA_USER_EMAIL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+        run: |
+          git add -A
+          git diff --cached --quiet || git commit -m "agent: ${{ inputs.ticket_key }} implementation"
+          git push -u origin "agent/${{ inputs.ticket_key }}"
+          python scripts/open_pr.py --ticket "${{ inputs.ticket_key }}"             --base main --head "agent/${{ inputs.ticket_key }}"
+          python scripts/jira_transition.py "${{ inputs.ticket_key }}" "In review"             --comment "Implementation PR opened. Status: In review."

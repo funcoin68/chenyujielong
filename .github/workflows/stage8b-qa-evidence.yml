@@ -1,0 +1,72 @@
+# .github/workflows/stage8b-qa-evidence.yml — QA evidence bundle before gate 2
+# Dispatched by maybe_aggregate.py on consensus. Deploys the PR to staging behind
+# its flag, verifies AC by AC, attaches ONE evidence permalink to the digest.
+# v4.1 fixes: deploy job now declares outputs (the URL was never reachable via
+# needs.*.outputs); Kimi Code endpoint + k3-256k pinned for the QA agent.
+name: stage8b-qa-evidence
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:  { required: true, type: string }
+      ticket_key: { required: true, type: string }
+
+permissions: { contents: read, pull-requests: write }
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.env.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "agent/${{ inputs.ticket_key }}" }
+      - name: Deploy to staging behind feature flag
+        run: ${{ vars.STAGING_DEPLOY_COMMAND }} --flag "flag-${{ inputs.ticket_key }}"
+      - id: env
+        name: Emit environment URL
+        run: echo "url=${{ vars.STAGING_URL_BASE }}/pr-${{ inputs.pr_number }}" >> $GITHUB_OUTPUT
+
+  verify:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "agent/${{ inputs.ticket_key }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: npm i -g @anthropic-ai/claude-code
+
+      - name: AC-by-AC verification (k3-256k QA agent, read-only)
+        env:
+          ANTHROPIC_BASE_URL: https://api.kimi.ai/coding
+          ANTHROPIC_API_KEY: ${{ secrets.KIMI_CODE_API_KEY }}
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ vars.JIRA_USER_EMAIL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+        run: |
+          mkdir -p /tmp/evidence
+          python scripts/verify_acceptance_criteria.py             --ticket "${{ inputs.ticket_key }}" --env-url "${{ needs.deploy-staging.outputs.url }}"             --out /tmp/evidence/
+      - name: Smoke + coverage delta
+        run: |
+          ${{ vars.SMOKE_COMMAND }} --env-url "${{ needs.deploy-staging.outputs.url }}" | tee /tmp/evidence/smoke.log
+          python scripts/coverage_delta.py --pr "${{ inputs.pr_number }}" > /tmp/evidence/coverage.md
+      - name: Risk-specific checks
+        run: python scripts/risk_checks.py --pr "${{ inputs.pr_number }}" --out /tmp/evidence/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: "qa-evidence-pr${{ inputs.pr_number }}"
+          path: /tmp/evidence/
+
+      - name: Publish bundle + attach permalink to the gate-2 digest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ vars.JIRA_USER_EMAIL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+        run: |
+          python scripts/publish_evidence_bundle.py --pr "${{ inputs.pr_number }}"             --dir /tmp/evidence --ticket "${{ inputs.ticket_key }}"
+          # posts ONE PR comment with the bundle permalink; adds the
+          # qa-evidence-green label only if every check passed. Gate-2
+          # auto-merge eligibility requires this label; humans always see the link.
