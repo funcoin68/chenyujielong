@@ -13,7 +13,17 @@ m = re.search(r"^modules:\s*(.+)$", body, re.M)
 if not m or not m.group(1).strip() or m.group(1).strip() == "[]":
     raise SystemExit("FAIL: PR body has no 'modules:' declaration — the scope guard "
                      "cannot verify scope. Stage-5 contract requires it.")
-declared = [x.strip().strip('"\'') for x in m.group(1).strip("[]").split(",") if x.strip()]
+# Bug #27: strip whitespace (incl. \r from CRLF edits) BEFORE stripping brackets —
+# '...tsconfig.json]\r' otherwise keeps the trailing ']' and every real module
+# with a trailing bracket gets flagged as scope creep. Validate entries too:
+# a path char mismatch means the line is mangled, not that the diff is.
+raw = m.group(1).strip().strip("[]")
+declared = [x.strip().strip('"\'') for x in raw.split(",") if x.strip()]
+bad = [d for d in declared if not re.fullmatch(r"[A-Za-z0-9._/\-]+", d)]
+if bad:
+    raise SystemExit(f"FAIL: malformed entries in the PR-body modules: line: {bad} — "
+                     "fix the line (valid chars: letters, digits, . _ / -) and re-run. "
+                     "Not scope creep: the declaration itself is unreadable.")
 out = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"],
                      capture_output=True, text=True, check=True).stdout
 changed = [l for l in out.strip().splitlines() if l]
