@@ -25,8 +25,13 @@ def main():
 
     v = verdict.get("verdict", "comment").lower()
     crit = int(verdict.get("criticals", "0") or 0)
-    event = {"approve": "APPROVE", "comment": "COMMENT"}.get(v, "REQUEST_CHANGES")
-    if v == "block": event = "REQUEST_CHANGES"
+    # Never APPROVE as github-actions[bot] (bug #25): (a) repos that disallow
+    # Actions PR approvals 422 with "GitHub Actions is not permitted to approve
+    # pull requests"; (b) gate 2 is the HUMAN PR approval — a bot APPROVE would
+    # satisfy a required-approvals rule and let the pipeline approve its own
+    # code. The machine verdict travels in the review body + reviewed-* label;
+    # maybe_aggregate parses verdicts from bodies, never from review state.
+    event = "REQUEST_CHANGES" if v == "block" else "COMMENT"
 
     # inline comments: criticals become review comments; needs-human-eye flagged
     gh_comments = []
