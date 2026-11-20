@@ -5,7 +5,7 @@ with YAML front matter. No prose outside markers (proposal-instructions.md).
 Usage: post_proposal.py out.txt --ticket KEY --round N [--notify-slack CH]"""
 import sys, os, re, json, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _pipeline_lib import jira, jira_adf, sha256_text, _req
+from _pipeline_lib import jira, jira_adf, sha256_text, canon_text, _req
 
 def parse_proposal(text):
     m = re.search(r"---PROPOSAL-START---(.*?)---PROPOSAL-END---", text, re.S)
@@ -52,7 +52,7 @@ def main():
     posted = jira("POST", f"/issue/{key}/comment", {"body": jira_adf(body)})
     # THE PINNING CONTRACT (PDF stage 4): gate 1 carries proposal_comment_id
     jira("PUT", f"/issue/{key}/properties/last-proposal",
-         {"comment_id": posted["id"], "hash": sha256_text(body), "round": rnd})
+         {"comment_id": posted["id"], "hash": sha256_text(canon_text(body)), "round": rnd})
 
     blocked = is_blocked(fm)
     if blocked and int(rnd) >= 3:

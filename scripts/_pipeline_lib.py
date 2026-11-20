@@ -84,3 +84,9 @@ def dispatch(workflow, inputs):
 def sha256_text(t):
     import hashlib
     return "sha256:" + hashlib.sha256(t.encode()).hexdigest()
+
+def canon_text(t):
+    """Canonical form for the pin hash. jira_adf() drops blank lines when
+    building ADF, so both sides must hash with blank lines removed — else the
+    pin can never verify (bug #18). Idempotent."""
+    return "\n".join(l for l in t.split("\n") if l.strip())
