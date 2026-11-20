@@ -12,12 +12,24 @@ def parse_proposal(text):
     if not m: raise SystemExit("FATAL: no PROPOSAL markers in agent output")
     body = m.group(1).strip()
     fm = {}
-    if body.startswith("---"):
-        end = body.index("\n---", 3)
+    # bug #16: agents wrap front matter in a ```yaml fence about as often as they
+    # use bare --- delimiters (template says bare). Accept both.
+    fence = re.match(r"```ya?ml\s*\n(.*?)\n```", body, re.S)
+    bare = body.startswith("---")
+    if fence or bare:
         import yaml
-        fm = yaml.safe_load(body[3:end]) or {}
-        body = body[end+4:].strip()
+        if fence:
+            fm = yaml.safe_load(fence.group(1)) or {}
+            body = body[fence.end():].strip()
+        else:
+            end = body.index("\n---", 3)
+            fm = yaml.safe_load(body[3:end]) or {}
+            body = body[end+4:].strip()
     return fm, body
+
+def is_blocked(fm):
+    """Template says open_questions:[]; agents also emit status: BLOCKED. Honor both."""
+    return bool(fm.get("open_questions")) or str(fm.get("status", "")).upper() == "BLOCKED"
 
 def transition(issue_key, name):
     ts = jira("GET", f"/issue/{issue_key}/transitions")["transitions"]
@@ -42,7 +54,7 @@ def main():
     jira("PUT", f"/issue/{key}/properties/last-proposal",
          {"comment_id": posted["id"], "hash": sha256_text(body), "round": rnd})
 
-    blocked = bool(fm.get("open_questions"))
+    blocked = is_blocked(fm)
     if blocked and int(rnd) >= 3:
         transition(key, "Needs human refinement"); set_label(key, "agent-awaiting-human", False)
         print(f"round {rnd} still ambiguous -> Needs human refinement")
