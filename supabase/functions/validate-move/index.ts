@@ -7,6 +7,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return Response.json({ valid: false, reason: 'method not allowed' }, { status: 405 })
   }
 
+  // Two idioms are a handful of bytes; anything larger is abuse, not a move.
+  const MAX_BODY_BYTES = 1024
+  const contentLength = Number(req.headers.get('content-length') ?? 0)
+  if (contentLength > MAX_BODY_BYTES) {
+    return Response.json({ valid: false, reason: 'request body too large' }, { status: 413 })
+  }
+
   let body: unknown
   try {
     body = await req.json()

@@ -31,7 +31,19 @@ export function validateMove(input: unknown): ValidateMoveResult {
     }
   }
 
-  if (!isChainValid(previousIdiom, move)) {
+  // isChainValid throws on punctuation-only input (chain.ts strips CJK
+  // punctuation before checking emptiness); map that to a 400, never a 500.
+  let chainValid: boolean
+  try {
+    chainValid = isChainValid(previousIdiom, move)
+  } catch {
+    return {
+      status: 400,
+      body: { valid: false, reason: 'previousIdiom and move must contain non-punctuation characters' },
+    }
+  }
+
+  if (!chainValid) {
     return {
       status: 400,
       body: { valid: false, reason: 'move does not continue the chain' },

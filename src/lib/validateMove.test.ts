@@ -38,4 +38,16 @@ describe('validateMove', () => {
     expect(result.status).toBe(200)
     expect(result.body).toEqual({ valid: true })
   })
+
+  it('rejects punctuation-only input as 400 instead of throwing', () => {
+    for (const input of [
+      { previousIdiom: '。', move: '意气风发' },
+      { previousIdiom: '，，，', move: '意气风发' },
+      { previousIdiom: '一心一意', move: '！！！' },
+    ]) {
+      const result = validateMove(input)
+      expect(result.status).toBe(400)
+      expect(result.body.valid).toBe(false)
+    }
+  })
 })
