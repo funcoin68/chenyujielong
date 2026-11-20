@@ -6,7 +6,7 @@ need no pip install. Auth comes from env:
 """
 import json, os, sys, urllib.request, urllib.error, base64
 
-def _req(method, url, token=None, body=None, basic=None, extra_headers=None):
+def _req(method, url, token=None, body=None, basic=None, extra_headers=None, expect_json=True):
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -19,7 +19,7 @@ def _req(method, url, token=None, body=None, basic=None, extra_headers=None):
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             raw = r.read().decode()
-            return json.loads(raw) if raw.strip() else {}
+            return json.loads(raw) if expect_json and raw.strip() else ({} if expect_json else raw)
     except urllib.error.HTTPError as e:
         detail = e.read().decode()[:500]
         print(f"HTTP {e.code} {method} {url}\n{detail}", file=sys.stderr)

@@ -55,7 +55,7 @@ def main():
               f"confidence {fm.get('confidence')}) -> Proposal ready")
     hook = os.environ.get("SLACK_WEBHOOK_URL")
     if hook and opt.get("--notify-slack"):
-        _req("POST", hook, body={"text": f"Proposal v{int(rnd)+1} for {key} "
+        _req("POST", hook, expect_json=False, body={"text": f"Proposal v{int(rnd)+1} for {key} "
             f"(tier {fm.get('risk_tier','?')}, confidence {fm.get('confidence','?')}): "
             f"{os.environ.get('JIRA_BASE_URL','')}/browse/{key}"})
 
