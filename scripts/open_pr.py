@@ -12,6 +12,10 @@ def find_open(head):
 
 args = sys.argv[1:]
 opt = {args[i].lstrip("-"): args[i+1] for i in range(len(args)-1) if args[i].startswith("--")}
+# bug #17: the parser above drops a trailing valueless flag (e.g. --check)
+for _a in args:
+    if _a.startswith("--") and _a.lstrip("-") not in opt:
+        opt[_a.lstrip("-")] = True
 head = opt.get("head", f"agent/{opt['ticket']}")
 existing = find_open(head)
 if "check" in opt:

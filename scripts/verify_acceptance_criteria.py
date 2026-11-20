@@ -10,6 +10,10 @@ from fetch_ticket import extract_ac
 
 args = sys.argv[1:]
 opt = {args[i].lstrip("-"): args[i+1] for i in range(len(args)-1) if args[i].startswith("--")}
+# bug #17: the parser above drops a trailing valueless flag (e.g. --check)
+for _a in args:
+    if _a.startswith("--") and _a.lstrip("-") not in opt:
+        opt[_a.lstrip("-")] = True
 issue = jira("GET", f"/issue/{opt['ticket']}?fields=summary,description")
 ac = extract_ac(issue["fields"].get("description"))
 os.makedirs(opt["out"], exist_ok=True)
