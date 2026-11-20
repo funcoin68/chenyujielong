@@ -34,6 +34,8 @@ jobs:
         with: { ref: "agent/${{ inputs.ticket_key }}" }
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
+      - name: Install dependencies
+        run: npm ci
       - run: npm i -g @anthropic-ai/claude-code
 
       - name: AC-by-AC verification (k3-256k QA agent, read-only)
