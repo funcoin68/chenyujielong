@@ -23,5 +23,10 @@ strays = [p for p in changed
 print(f"declared modules: {declared}\nchanged files: {len(changed)}")
 if strays:
     print("FAIL: scope creep — files outside declared modules:\n  " + "\n  ".join(strays))
+    print("remediation (human gate): review the stray diff, then either")
+    print("  (a) edit the PR body and add the path to 'modules:' — the guard")
+    print("      prefix-matches, so a trailing-slash directory covers its files —")
+    print("      then re-run this job (the body is read live, no push needed); or")
+    print("  (b) revert the file on the branch if the change is not legitimate.")
     raise SystemExit(1)
 print("scope OK")

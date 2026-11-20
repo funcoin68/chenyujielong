@@ -14,6 +14,12 @@ flagged items. Nothing else.
 - Do not reply to reviewers, do not restructure untouched code, do not "improve"
   adjacent lines. The swarm will re-review your fix against the same checklists.
 - Secrets, .env, CI config, and migrations folders remain read-only.
+- Scope is the DECLARED module list, not just the flagged files: touch ONLY
+  files under the PR body's modules: entries (the stage-6 scope guard enforces
+  this and will fail the gates). If a finding genuinely requires a NEW file
+  outside declared scope (e.g. a sibling config.toml), STOP: revert it, post a
+  PR comment naming the path and the reason, and leave the tree clean. A human
+  expands the modules: list and re-runs — you never expand your own scope.
 
 ## Before pushing
 1. Run the repo's test command and lint. Both must pass.

@@ -30,6 +30,9 @@ End your run by ensuring:
 - All commits pushed to agent/{ticket}
 - PR description follows the PR template (scripts/open_pr.py builds it):
   what/why, test evidence (paste test run summary), risk tier, affected
-  modules, flag name + rollout, link to proposal comment.
+  modules, flag name + rollout, link to proposal comment. Declare modules as
+  directory prefixes (trailing slash) when the unit is a directory — e.g.
+  `supabase/functions/validate-move/`, not just its index.ts — the scope guard
+  prefix-matches, and sibling files (config.toml, deno.json) belong to the unit.
 Then stop. Do NOT merge, do NOT touch the PR beyond opening it. Review is a
 different stage with different agents.
