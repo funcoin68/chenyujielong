@@ -48,7 +48,7 @@ jobs:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         timeout-minutes: 20
         run: |
-          claude -p --model "${{ vars.FIXER_MODEL || 'k3-256k' }}"             --append-system-prompt "$(cat agent/fix-instructions.md)"             "$(cat /tmp/context.md)"
+          claude -p --permission-mode bypassPermissions --model "${{ vars.FIXER_MODEL || 'k3-256k' }}"             --append-system-prompt "$(cat agent/fix-instructions.md)"             "$(cat /tmp/context.md)"
 
       - name: Verify + push (triggers ci-pr-gates -> swarm re-runs)
         env:

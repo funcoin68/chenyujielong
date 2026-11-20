@@ -62,7 +62,7 @@ jobs:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         timeout-minutes: 45
         run: |
-          claude -p --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --append-system-prompt "$(cat agent/implementation-instructions.md)"             "$(cat /tmp/context.md)
+          claude -p --permission-mode bypassPermissions --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --append-system-prompt "$(cat agent/implementation-instructions.md)"             "$(cat /tmp/context.md)
           APPROVED PROPOSAL (your spec):
           $(cat /tmp/proposal.md)"
 
