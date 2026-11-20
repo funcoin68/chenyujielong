@@ -1,8 +1,13 @@
 # .github/workflows/stage8b-qa-evidence.yml — QA evidence bundle before gate 2
 # Dispatched by maybe_aggregate.py on consensus. Deploys the PR to staging behind
 # its flag, verifies AC by AC, attaches ONE evidence permalink to the digest.
-# v4.1 fixes: deploy job now declares outputs (the URL was never reachable via
-# needs.*.outputs); Kimi Code endpoint + k3-256k pinned for the QA agent.
+# v4.9: concrete staging — Vercel preview + staging Supabase (bug #28 follow-up).
+# The deploy is no longer an abstract STAGING_DEPLOY_COMMAND var: build locally
+# with staging Supabase env baked in, `vercel build` + `deploy --prebuilt`, and
+# capture the REAL preview URL from CLI output (was: fabricated URL_BASE/pr-N).
+# Precondition step fails loudly naming missing secrets/vars. Smoke now has a
+# REAL default (curl the preview root) and reads $ENV_URL from the environment.
+# v4.1 fixes: deploy job declares outputs; Kimi Code endpoint + k3-256k pinned.
 name: stage8b-qa-evidence
 on:
   workflow_dispatch:
@@ -10,21 +15,56 @@ on:
       pr_number:  { required: true, type: string }
       ticket_key: { required: true, type: string }
 
-permissions: { contents: read, pull-requests: write }
+permissions: { contents: read, pull-requests: write, issues: write }   # issues:write = bundle comment + qa-evidence-green label (bug #24 lesson)
 
 jobs:
   deploy-staging:
     runs-on: ubuntu-latest
     outputs:
       url: ${{ steps.env.outputs.url }}
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_STAGING_REF: ${{ vars.SUPABASE_STAGING_REF }}
+      VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
     steps:
       - uses: actions/checkout@v4
         with: { ref: "agent/${{ inputs.ticket_key }}" }
-      - name: Deploy to staging behind feature flag
-        run: ${{ vars.STAGING_DEPLOY_COMMAND }} --flag "flag-${{ inputs.ticket_key }}"
-      - id: env
-        name: Emit environment URL
-        run: echo "url=${{ vars.STAGING_URL_BASE }}/pr-${{ inputs.pr_number }}" >> $GITHUB_OUTPUT
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: "Precondition: staging secrets configured"
+        run: |
+          missing=""
+          for v in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID SUPABASE_ACCESS_TOKEN SUPABASE_STAGING_REF VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
+            [ -z "${!v}" ] && missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::stage 8b staging is not configured; missing:$missing"
+            echo "::error::setup guide: setup/stage8b-staging/README-stage8b.md in the pipeline pack."
+            echo "::error::This gate fails loudly by design — it protects gate-2 merge eligibility."
+            exit 1
+          fi
+      - name: Install dependencies
+        run: npm ci
+      - name: Deploy edge functions to staging Supabase (if any in this PR)
+        run: |
+          if ls supabase/functions/*/index.ts >/dev/null 2>&1; then
+            npx supabase functions deploy --project-ref "$SUPABASE_STAGING_REF"
+          else
+            echo "no edge functions in this PR — skipping"
+          fi
+      - name: Build + deploy Vercel preview, capture real URL
+        id: env
+        # VITE_SUPABASE_* from the job env are baked into the bundle at build
+        # time -> the preview talks to the STAGING Supabase project, never prod.
+        run: |
+          npx vercel build --yes --token "$VERCEL_TOKEN"
+          URL=$(npx vercel deploy --prebuilt --yes --token "$VERCEL_TOKEN" | tail -1)
+          echo "preview: $URL"
+          echo "url=${URL}?flags=flag-${{ inputs.ticket_key }}" >> "$GITHUB_OUTPUT"
 
   verify:
     needs: deploy-staging
@@ -50,8 +90,10 @@ jobs:
           mkdir -p /tmp/evidence
           python scripts/verify_acceptance_criteria.py             --ticket "${{ inputs.ticket_key }}" --env-url "${{ needs.deploy-staging.outputs.url }}"             --out /tmp/evidence/
       - name: Smoke + coverage delta
+        env:
+          ENV_URL: ${{ needs.deploy-staging.outputs.url }}
         run: |
-          ${{ vars.SMOKE_COMMAND }} --env-url "${{ needs.deploy-staging.outputs.url }}" | tee /tmp/evidence/smoke.log
+          ${{ vars.SMOKE_COMMAND || 'curl -sfL --retry 5 --retry-delay 3 "$ENV_URL"' }} | tee /tmp/evidence/smoke.log
           python scripts/coverage_delta.py --pr "${{ inputs.pr_number }}" > /tmp/evidence/coverage.md
       - name: Risk-specific checks
         run: python scripts/risk_checks.py --pr "${{ inputs.pr_number }}" --out /tmp/evidence/
