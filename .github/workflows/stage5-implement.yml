@@ -1,4 +1,5 @@
 # .github/workflows/stage5-implement.yml — stage 5: implementation on agent/* branch
+# v4.9 bug #34: fetch Jira attachments into context (see scripts/fetch_attachments.py).
 # Dispatched by Jira Automation when gate 1 ("Approve plan") fires.
 # v4.1 fixes: git identity on the ephemeral runner (commit used to fail silently),
 # read-only default token (write comes only from the branch-scoped AGENT_PUSH_TOKEN),
@@ -73,6 +74,8 @@ jobs:
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
         run: |
           python scripts/fetch_ticket.py "${{ inputs.ticket_key }}" > /tmp/ticket.json
+          pip install --quiet pypdf || true   # PDF design docs; script degrades gracefully without it
+          python scripts/fetch_attachments.py /tmp/ticket.json --out /tmp/attachments
           python scripts/fetch_proposal.py "${{ inputs.ticket_key }}"               "${{ inputs.proposal_comment_id }}" > /tmp/proposal.md
           # hard gate: fetched proposal hash must still match the approved one
           python scripts/verify_pinned.py "${{ inputs.ticket_key }}" /tmp/proposal.md

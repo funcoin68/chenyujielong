@@ -7,7 +7,7 @@ from _pipeline_lib import jira
 def main():
     key = sys.argv[1]
     with_comments = "--with-comments" in sys.argv
-    fields = "summary,description,status,labels,components,created,updated"
+    fields = "summary,description,status,labels,components,created,updated,attachment"
     issue = jira("GET", f"/issue/{key}?fields={fields}")
     f = issue["fields"]
     out = {
@@ -20,6 +20,11 @@ def main():
         # acceptance-criteria section convention (## Acceptance criteria)
         "description_adf": f.get("description"),
         "acceptance_criteria": extract_ac(f.get("description")),
+        # bug #34: attachment metadata so fetch_attachments.py can download the
+        # files server-side — agents hold no Jira creds by design (bug #19).
+        "attachments": [{"id": a.get("id"), "filename": a.get("filename"),
+                         "mimeType": a.get("mimeType"), "size": a.get("size")}
+                        for a in f.get("attachment", [])],
     }
     if with_comments:
         cs = jira("GET", f"/issue/{key}/comment?maxResults=100&orderBy=created")

@@ -1,4 +1,5 @@
 # .github/workflows/stage3-proposal.yml — stage 3: analysis & proposal (plan mode)
+# v4.9 bug #34: fetch Jira attachments into context (see scripts/fetch_attachments.py).
 # v4.9 bug #33: --permission-mode plan -> dontAsk. Since Claude Code v2.1.283,
 # plan mode routes shell commands through auto mode's server-side safety
 # classifier; through the Kimi gateway that check can't run, so headless runs
@@ -34,6 +35,8 @@ jobs:
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
         run: |
           python scripts/fetch_ticket.py "${{ inputs.ticket_key }}" > /tmp/ticket.json
+          pip install --quiet pypdf || true   # PDF design docs; script degrades gracefully without it
+          python scripts/fetch_attachments.py /tmp/ticket.json --out /tmp/attachments
           python scripts/assemble_context.py /tmp/ticket.json > /tmp/context.md
 
       - name: Run proposal agent (k3, plan mode)

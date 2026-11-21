@@ -29,6 +29,13 @@ def main():
             if age > 14:
                 parts.append(f"> WARNING: onboarding pack is {age} days old (>14). "
                              "Distrust 'recent decisions'; re-derive from git log.")
+    # bug #34: design docs etc. attached to the ticket — fetched server-side
+    # by fetch_attachments.py (agents hold no Jira creds). Placed BEFORE the
+    # pack so the 40k budget truncates the pack tail, not the ticket's docs.
+    att_index = os.path.join(os.environ.get("ATTACHMENTS_DIR", "/tmp/attachments"), "index.md")
+    if os.path.exists(att_index):
+        parts.append("## Ticket attachments (fetched at pipeline runtime)\n"
+                     + open(att_index).read())
     parts.append(read(pack, "Onboarding pack"))
     parts.append(read("docs/agent/CORRECTIONS.md", "CORRECTIONS.md (prior-engineer memory)"))
     if os.path.exists("repo-registry.yaml"):

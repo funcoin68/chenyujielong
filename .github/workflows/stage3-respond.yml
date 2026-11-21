@@ -1,4 +1,5 @@
 # .github/workflows/stage3-respond.yml — reacts to human JIRA comments (Q&A loop)
+# v4.9 bug #34: fetch Jira attachments into context (see scripts/fetch_attachments.py).
 # v4.9 bug #33: plan -> dontAsk (see stage3-proposal.yml header). plan mode now
 # depends on auto mode's server-side classifier, which the Kimi gateway cannot
 # serve; dontAsk enforces read-only deterministically.
@@ -31,6 +32,8 @@ jobs:
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
         run: |
           python scripts/fetch_ticket.py "${{ inputs.ticket_key }}" --with-comments > /tmp/ticket.json
+          pip install --quiet pypdf || true   # PDF design docs; script degrades gracefully without it
+          python scripts/fetch_attachments.py /tmp/ticket.json --out /tmp/attachments
           python scripts/assemble_context.py /tmp/ticket.json --with-qa > /tmp/context.md
 
       - name: "Run agent: answer questions / revise proposal (k3, plan mode)"
