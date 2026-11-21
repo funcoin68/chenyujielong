@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { ref: "agent/${{ inputs.ticket_key }}" }
       - uses: actions/setup-node@v4
-        with: { node-version: "20" }
+        with: { node-version: "26.13.0" }
       - name: "Precondition: staging secrets configured"
         run: |
           missing=""
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { ref: "agent/${{ inputs.ticket_key }}" }
       - uses: actions/setup-node@v4
-        with: { node-version: "20" }
+        with: { node-version: "26.13.0" }
       - name: Install dependencies
         run: npm ci
       - run: npm i -g @anthropic-ai/claude-code

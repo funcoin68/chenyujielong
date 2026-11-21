@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { ref: main }
       - uses: actions/setup-node@v4
-        with: { node-version: "20" }
+        with: { node-version: "26.13.0" }
       - run: npm i -g @anthropic-ai/claude-code   # ephemeral runner: install each run
 
       - name: Fetch ticket + assemble context
