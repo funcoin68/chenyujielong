@@ -52,7 +52,10 @@ jobs:
       - name: Deploy edge functions to staging Supabase (if any in this PR)
         run: |
           if ls supabase/functions/*/index.ts >/dev/null 2>&1; then
-            npx supabase functions deploy --project-ref "$SUPABASE_STAGING_REF"
+            # bug #29: CLI v3 requires --yes headless (deploy asks for confirmation
+            # and aborts when stdout is not a TTY); --remote replaces the
+            # deprecated --project-ref (removed in CLI v4).
+            npx supabase functions deploy --remote "$SUPABASE_STAGING_REF" --yes
           else
             echo "no edge functions in this PR — skipping"
           fi
