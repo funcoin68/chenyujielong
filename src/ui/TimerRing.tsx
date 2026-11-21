@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import './TimerRing.css'
 
 export interface TimerRingProps {
@@ -7,6 +8,8 @@ export interface TimerRingProps {
   /** full turn duration, for the depletion fraction */
   totalSeconds?: number
   size?: number
+  /** rendered inside the ring (e.g. the active player's avatar) */
+  children?: ReactNode
 }
 
 /**
@@ -14,7 +17,7 @@ export interface TimerRingProps {
  * rAF-driven conic gradient, yellow at <=10s, red pulse at <=5s.
  * prefers-reduced-motion: numeric countdown only, no animation.
  */
-export function TimerRing({ seconds, totalSeconds = 30, size = 72 }: TimerRingProps) {
+export function TimerRing({ seconds, totalSeconds = 30, size = 72, children }: TimerRingProps) {
   const [remaining, setRemaining] = useState(seconds)
 
   useEffect(() => {
@@ -47,9 +50,12 @@ export function TimerRing({ seconds, totalSeconds = 30, size = 72 }: TimerRingPr
         style={ringStyle}
         aria-hidden="true"
       >
-        <span className="timer-ring-hole" />
+        <span className="timer-ring-hole">{children}</span>
       </span>
-      <span className="timer-ring-number" style={{ fontSize: size * 0.28 }}>
+      <span
+        className={`timer-ring-number${children ? ' timer-ring-number--below' : ''}`}
+        style={{ fontSize: size * 0.28 }}
+      >
         {shown}
       </span>
     </span>

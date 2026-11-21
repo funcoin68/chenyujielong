@@ -1,0 +1,110 @@
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: var(--space-3);
+}
+
+.results-title {
+  margin: 0;
+  text-align: center;
+  font-size: 28px;
+}
+
+.results-podium {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.results-winner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.results-winner-name {
+  font-family: var(--font-heading);
+  font-size: 24px;
+}
+
+.results-winner-score {
+  font-family: var(--font-numerals);
+  font-size: 48px;
+  font-weight: 800;
+}
+
+.results-runners {
+  display: flex;
+  gap: var(--space-4);
+  font-weight: 600;
+}
+
+.results-section-title {
+  margin: 0 0 var(--space-2);
+  font-size: 16px;
+  color: var(--ink-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.results-standings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.results-row summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+  min-height: 44px;
+  list-style: none;
+}
+
+.results-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.results-rank {
+  font-family: var(--font-numerals);
+  font-weight: 800;
+  color: var(--ink-secondary);
+}
+
+.results-row-name {
+  font-weight: 600;
+}
+
+.results-row-score {
+  margin-left: auto;
+  font-family: var(--font-numerals);
+  font-weight: 800;
+  font-size: 20px;
+}
+
+.results-row-idioms {
+  color: var(--ink-secondary);
+  font-size: 14px;
+}
+
+.results-row-chain {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+}
+
+.results-best {
+  margin: 0;
+}

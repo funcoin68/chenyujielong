@@ -13,6 +13,9 @@
 }
 
 .timer-ring-hole {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 78%;
   height: 78%;
   border-radius: 50%;
@@ -25,6 +28,12 @@
   font-weight: 800;
   color: var(--ink-primary);
   font-variant-numeric: tabular-nums;
+}
+
+/* when the ring wraps an avatar, the number docks underneath instead */
+.timer-ring-number--below {
+  top: 100%;
+  margin-top: var(--space-1);
 }
 
 /* <=5s: subtle scale heartbeat (spec S6); disabled by the global

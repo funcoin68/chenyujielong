@@ -18,7 +18,7 @@ const ROUTES = ['/', '/lobby', '/room/demo', '/room/demo/play', '/room/demo/resu
 describe('mock-up routes render without errors (AC #3)', () => {
   it.each(ROUTES)('route %s renders a <main> landmark', (route) => {
     const html = renderRoute(route)
-    expect(html).toContain('role="main"')
+    expect(html).toContain('<main')
   })
 
   it('landing shows the Google sign-in button as the primary action', () => {
@@ -37,7 +37,8 @@ describe('mock-up routes render without errors (AC #3)', () => {
 
   it('waiting room shows the fixture room name and invite code', () => {
     const html = renderRoute(`/room/${ROOM.id}`)
-    expect(html).toContain(ROOM.name)
+    // renderToString escapes apostrophes as &#x27;
+    expect(html).toContain(ROOM.name.replace(/'/g, '&#x27;'))
     for (const ch of ROOM.code) expect(html).toContain(ch)
   })
 

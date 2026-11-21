@@ -1,0 +1,171 @@
+.lobby {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-3);
+}
+
+.lobby-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lobby-wordmark {
+  font-family: var(--font-idiom);
+  font-size: 28px;
+}
+
+.lobby-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lobby-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-primary);
+  cursor: pointer;
+}
+
+.lobby-icon-btn:hover {
+  background: var(--bg-surface);
+}
+
+.lobby-avatar-link {
+  position: relative;
+  display: inline-flex;
+  border-radius: 50%;
+}
+
+/* presence dot: green = online (spec S2) */
+.lobby-presence {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--jade-green);
+  border: 2px solid var(--bg-canvas);
+}
+
+.lobby-columns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.lobby-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lobby-greeting {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 24px;
+}
+
+.lobby-secondary {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.lobby-secondary .btn {
+  flex: 1;
+}
+
+.lobby-section-title {
+  margin: 0 0 var(--space-2);
+  font-size: 16px;
+  color: var(--ink-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lobby-room-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lobby-room {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.lobby-room-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.lobby-room-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lobby-room-meta {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.lobby-recent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-primary);
+  text-decoration: none;
+}
+
+.lobby-recent-date {
+  margin-left: auto;
+  color: var(--ink-secondary);
+  font-size: 14px;
+}
+
+.lobby-join-hint {
+  margin: 0;
+  text-align: center;
+  color: var(--ink-secondary);
+  font-size: 14px;
+}
+
+/* Desktop: two columns — actions sticky left, rooms + recent right (spec S2) */
+@media (min-width: 768px) {
+  .lobby-columns {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    align-items: start;
+  }
+
+  .lobby-actions {
+    position: sticky;
+    top: var(--space-3);
+  }
+
+  .lobby-recent {
+    grid-column: 2;
+  }
+}

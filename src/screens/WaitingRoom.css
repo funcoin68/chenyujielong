@@ -1,0 +1,149 @@
+.waiting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: var(--space-3);
+}
+
+.waiting-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.waiting-room-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.waiting-name {
+  margin: 0;
+  font-size: 28px;
+}
+
+.waiting-code {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 56px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--tile-outline);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  cursor: pointer;
+  font-family: var(--font-numerals);
+}
+
+.waiting-code-label {
+  color: var(--ink-secondary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.waiting-code-char {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 40px;
+  border-radius: var(--radius-chip);
+  background: var(--bg-canvas);
+  border: 1px solid var(--tile-outline);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.waiting-section-title {
+  margin: 0 0 var(--space-2);
+  font-size: 16px;
+  color: var(--ink-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.waiting-player-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.waiting-player {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.waiting-player-name {
+  font-weight: 600;
+}
+
+.waiting-ready {
+  margin-left: auto;
+  color: var(--ink-secondary);
+  font-size: 14px;
+}
+
+.waiting-ready--yes {
+  color: var(--jade-green);
+  font-weight: 600;
+}
+
+.waiting-player--empty {
+  border: 1px dashed var(--chain-link);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+  color: var(--ink-secondary);
+}
+
+.waiting-empty-dot {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px dashed var(--chain-link);
+}
+
+.waiting-empty-label {
+  font-size: 14px;
+}
+
+.waiting-chat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.waiting-chat-label {
+  color: var(--ink-secondary);
+  font-size: 14px;
+}
+
+.waiting-chat-chip {
+  cursor: pointer;
+  min-height: 44px;
+}
+
+/* Desktop: room info left, players right (spec S5) */
+@media (min-width: 768px) {
+  .waiting {
+    max-width: 960px;
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    align-items: start;
+  }
+
+  .waiting-topbar,
+  .waiting-chat,
+  .waiting > .btn-primary {
+    grid-column: 1 / -1;
+  }
+}
