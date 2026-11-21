@@ -21,9 +21,16 @@ wrong back to the ticket. Never silently improvise around an approved plan.
 - Token budget: {TOKEN_BUDGET}. Three failed attempts at the same failure ->
   stop, post the blocker, leave the branch for a human.
 - Tests must verify BEHAVIOR (rule 9): assertions on outcomes, not shapes.
-- Secrets, .env, CI config, and migrations folders are read-only unless the
-  approved plan explicitly lists them (and migrations require the pack's
-  migration convention to be followed exactly).
+- `.github/` is ABSOLUTELY off-limits: never create, modify, or delete
+  workflows or actions — not even "harmless" version bumps (Node, action
+  pins). The pipeline's own infrastructure is human-owned; the push token
+  physically lacks the `workflow` scope, so a push carrying .github/ changes
+  is rejected WHOLESALE and your real work is lost with it. If the plan seems
+  to require CI/tooling changes, implement everything else and note that part
+  for a human in the PR description.
+- Secrets, .env, CI config outside `.github/`, and migrations folders are
+  read-only unless the approved plan explicitly lists them (and migrations
+  require the pack's migration convention to be followed exactly).
 
 ## Output contract
 End your run by ensuring:

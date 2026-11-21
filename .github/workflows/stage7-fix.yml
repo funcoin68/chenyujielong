@@ -1,4 +1,7 @@
 # .github/workflows/stage7-fix.yml — bounded fix loop, dispatched by maybe_aggregate.py
+# v4.9 bug #32: same .github/ containment guard as stage5 - a fix-round agent is
+# equally capable of "improving" workflows; the token refusal must not be the
+# only line of defense.
 # v4.1 fixes: round cap off-by-one (<= 3: rounds 1-3 run, round 4 cannot start,
 # matching the PDF's "three rounds with criticals still open -> needs human");
 # git identity set; default token read-only (push via branch-scoped AGENT_PUSH_TOKEN);
@@ -49,6 +52,14 @@ jobs:
         timeout-minutes: 20
         run: |
           claude -p --permission-mode bypassPermissions --model "${{ vars.FIXER_MODEL || 'k3-256k' }}"             --append-system-prompt "$(cat agent/fix-instructions.md)"             "$(cat /tmp/context.md)"
+
+      - name: "Containment: revert any .github/ edits (bug #32)"
+        run: |
+          if git status --porcelain -- .github/ | grep .; then
+            echo "::warning::Agent modified .github/ — reverting. Workflows/actions are human-owned infrastructure."
+            git status --porcelain -- .github/
+            git restore --source=HEAD --staged --worktree -- .github/
+          fi
 
       - name: Verify + push (triggers ci-pr-gates -> swarm re-runs)
         env:

@@ -13,7 +13,12 @@ flagged items. Nothing else.
   as a PR comment and leave the branch for a human. Do not redesign.
 - Do not reply to reviewers, do not restructure untouched code, do not "improve"
   adjacent lines. The swarm will re-review your fix against the same checklists.
-- Secrets, .env, CI config, and migrations folders remain read-only.
+- `.github/` remains ABSOLUTELY off-limits (workflows/actions are human-owned;
+  the push token has no `workflow` scope — carrying such changes gets the whole
+  push rejected). If a review finding seems to require a workflow change, post
+  it as a PR comment for a human instead.
+- Secrets, .env, CI config outside `.github/`, and migrations folders remain
+  read-only.
 - Scope is the DECLARED module list, not just the flagged files: touch ONLY
   files under the PR body's modules: entries (the stage-6 scope guard enforces
   this and will fail the gates). If a finding genuinely requires a NEW file

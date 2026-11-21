@@ -9,6 +9,10 @@
 # only a __pycache__ .pyc). TEST/LINT vars get npm fallbacks.
 # v4.4 bug #19: --permission-mode bypassPermissions on the claude step - a headless
 # runner cannot answer interactive write approvals, so every Write/Edit was denied.
+# v4.9 bug #32: containment guard reverts any .github/ edits before commit - the
+# CYJ-3 agent rewrote all 8 workflows (node 20 -> 26) instead of implementing, and
+# only the PAT's missing workflow scope stopped it. Defense in depth: instructions
+# say no, this guard enforces it, the token makes it physically impossible.
 # Blast radius stays small: this step env holds only KIMI_CODE_API_KEY; pushes use the
 # branch-scoped AGENT_PUSH_TOKEN and the ruleset still blocks main.
 name: stage5-implement
@@ -91,6 +95,18 @@ jobs:
         run: |
           ${{ vars.TEST_COMMAND || 'npm test' }}
           ${{ vars.LINT_COMMAND || 'npm run lint' }}
+
+      - name: "Containment: revert any .github/ edits (bug #32)"
+        if: steps.dup.outputs.exists != 'true'
+        run: |
+          # Agents never touch pipeline infrastructure. The AGENT_PUSH_TOKEN lacks
+          # the workflow scope, so a push carrying .github/ changes is rejected
+          # wholesale — stripping them here saves the rest of the agent's work.
+          if git status --porcelain -- .github/ | grep .; then
+            echo "::warning::Agent modified .github/ — reverting. Workflows/actions are human-owned infrastructure."
+            git status --porcelain -- .github/
+            git restore --source=HEAD --staged --worktree -- .github/
+          fi
 
       - name: Push branch + open PR
         if: steps.dup.outputs.exists != 'true'
