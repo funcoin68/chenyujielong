@@ -12,3 +12,8 @@ stage 7.
 
 ## Corrections
 (none yet — first entries will come from your pilot PRs)
+
+
+# Correction candidates from PR #4
+
+No review-induced changes — nothing to distill this time.
