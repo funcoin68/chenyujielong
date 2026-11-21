@@ -1,0 +1,71 @@
+/* Modals get a dim scrim, not a shadow (spec §2.4). Bottom-sheet on mobile,
+   centered dialog on desktop (spec §5). */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--scrim);
+}
+
+.modal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--tile-outline);
+  border-radius: var(--radius-modal) var(--radius-modal) 0 0;
+  outline: none;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 24px;
+}
+
+.modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  background: var(--bg-canvas);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+@media (min-width: 768px) {
+  .modal-scrim {
+    align-items: center;
+  }
+
+  .modal-panel {
+    border-radius: var(--radius-modal);
+  }
+}

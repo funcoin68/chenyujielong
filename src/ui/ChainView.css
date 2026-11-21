@@ -1,0 +1,51 @@
+.chain-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chain-view-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.chain-connector {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--ink-secondary);
+}
+
+/* vertical link segment, then the shared character on the line (spec S6) */
+.chain-connector::before {
+  content: '';
+  width: 2px;
+  height: 10px;
+  background: var(--chain-link);
+}
+
+.chain-connector-char {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--space-1);
+  border-radius: 50%;
+  border: 1px solid var(--chain-link);
+  background: var(--bg-canvas);
+  font-family: var(--font-idiom);
+  font-size: 16px;
+}
+
+.chain-connector::after {
+  content: '';
+  width: 2px;
+  height: 10px;
+  background: var(--chain-link);
+}
