@@ -1,0 +1,28 @@
+/* CYJ-5: static full-viewport gradient background (pure CSS, no network assets) */
+
+:root {
+  /* Palette option A — "Sunrise Peach"; swap these three stops to change palette */
+  --bg-stop-1: #fff7e6;
+  --bg-stop-2: #ffe3ec;
+  --bg-stop-3: #e6f0ff;
+}
+
+html,
+body,
+#root {
+  min-height: 100vh;
+}
+
+body {
+  margin: 0;
+  /* `fixed` pins the gradient to the viewport: no tiling seams or scroll artifacts */
+  background: linear-gradient(
+      135deg,
+      var(--bg-stop-1),
+      var(--bg-stop-2),
+      var(--bg-stop-3)
+    )
+    fixed
+    no-repeat;
+  color: #1f2937;
+}
