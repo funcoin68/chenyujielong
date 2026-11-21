@@ -1,4 +1,7 @@
 # .github/workflows/ci-pr-gates.yml — stage 6: PR + CI gates, then swarm dispatch
+# v4.9+fix36: diff cap gains the promised human sign-off path — the
+# `diff-cap-signed-off` PR label raises the cap to vars.DIFF_CAP_RAISED
+# (default 4000). Bounded, auditable (label = timeline record), never skipped.
 # v4.8: explicit permissions block (bug #23/#24) — repo default GITHUB_TOKEN is
 # read-only, so the packet-comment/label writes 403'd with "Resource not
 # accessible by integration". NOTE: issues:write ALONE still 403'd — for
@@ -63,8 +66,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # required by gitleaks-action v2 (breaking change)
 
       - name: Diff-size cap
-        # >600 changed lines (excluding generated/tests/lockfiles) => auto-blocked
-        run: python scripts/check_diff_size.py --max-lines 600
+        # >600 changed lines (excluding generated/tests/lockfiles) => auto-blocked.
+        # One-off human sign-off: a human reviews the diff, then applies the
+        # `diff-cap-signed-off` label to the PR. The label in the PR timeline IS
+        # the audit trail (who/when). Cap then raises to vars.DIFF_CAP_RAISED
+        # (default 4000) — still bounded, never skipped outright.
+        env:
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        run: |
+          MAX=600
+          if curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels?per_page=100" \
+              | jq -e '.[] | select(.name == "diff-cap-signed-off")' > /dev/null; then
+            MAX=${{ vars.DIFF_CAP_RAISED || 4000 }}
+            echo "::warning::diff cap raised to $MAX via diff-cap-signed-off label on PR #${{ github.event.pull_request.number }} — one-off human sign-off"
+          fi
+          python scripts/check_diff_size.py --max-lines "$MAX"
 
       - name: Scope guard
         # Agent may only touch what its plan declared. Parses PR body "modules:"
