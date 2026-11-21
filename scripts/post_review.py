@@ -5,6 +5,22 @@ import sys, os, re, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _pipeline_lib import gh, add_label, get_pr
 
+def canon_verdict(raw):
+    """Collapse free-text verdicts to the 3-state contract (bug #37). Cheap
+    models paraphrase: "approve with comments", "LGTM", "looks good" — the
+    aggregator's decision matrix only has room for block|approve|comment."""
+    r = (raw or "").strip().lower()
+    if "block" in r or "reject" in r or "request_change" in r or "request change" in r:
+        return "block"
+    if "approv" in r or "lgtm" in r or r in ("pass", "ok", "yes"):
+        return "approve"
+    return "comment"
+
+def parse_crit(raw):
+    """'0', 'none', '0 (see comments)' -> 0; '2' -> 2. Never raises (bug #37)."""
+    m = re.search(r"\d+", str(raw or ""))
+    return int(m.group(0)) if m else 0
+
 def parse_review_output(text):
     """Extract verdict block and comments JSON from agent stdout."""
     vm = re.search(r"---REVIEW-START---(.*?)---REVIEW-END---", text, re.S)
@@ -23,8 +39,9 @@ def main():
     text = open(args[args.index("--output-file")+1]).read()
     verdict, comments = parse_review_output(text)
 
-    v = verdict.get("verdict", "comment").lower()
-    crit = int(verdict.get("criticals", "0") or 0)
+    raw_v = (verdict.get("verdict") or "").strip()
+    v = canon_verdict(raw_v)            # bug #37: never pass free text downstream
+    crit = parse_crit(verdict.get("criticals"))
     # Never APPROVE as github-actions[bot] (bug #25): (a) repos that disallow
     # Actions PR approvals 422 with "GitHub Actions is not permitted to approve
     # pull requests"; (b) gate 2 is the HUMAN PR approval — a bot APPROVE would
@@ -44,7 +61,10 @@ def main():
     head_sha = get_pr(pr_no)["head"]["sha"]
     body = (f"### Review — {persona} (clean-room, k3-256k)\n"
             f"```\n---REVIEW-START---\npersona: {persona}\nverdict: {v}\n"
-            f"criticals: {crit}\ncomments: {len(comments)}\n---REVIEW-END---\n```")
+            f"criticals: {crit}\ncomments: {len(comments)}\n")
+    if raw_v and raw_v.lower() != v:
+        body += f"verdict_raw: {raw_v}\n"   # audit trail when drift was normalized (bug #37)
+    body += "---REVIEW-END---\n```"
     payload = {"commit_id": head_sha, "event": event, "body": body}
     if gh_comments: payload["comments"] = gh_comments
     try:
