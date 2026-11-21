@@ -55,7 +55,9 @@ jobs:
             # bug #29: CLI v3 requires --yes headless (deploy asks for confirmation
             # and aborts when stdout is not a TTY); --remote replaces the
             # deprecated --project-ref (removed in CLI v4).
-            npx supabase functions deploy --remote "$SUPABASE_STAGING_REF" --yes
+            # bug #30: --remote rejects a space-separated value ("looks like a
+            # project ref") — it MUST be --remote=<ref> with an equals sign.
+            npx supabase functions deploy --remote="$SUPABASE_STAGING_REF" --yes
           else
             echo "no edge functions in this PR — skipping"
           fi
