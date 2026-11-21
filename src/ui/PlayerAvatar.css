@@ -1,0 +1,31 @@
+.player-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 3px solid;
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  flex: none;
+}
+
+/* current turn: red ring (red is reserved for this + primary CTAs, spec §2.2) */
+.player-avatar--active {
+  outline: 3px solid var(--brand-red);
+  outline-offset: 2px;
+  animation: player-avatar-pop 250ms var(--spring);
+}
+
+@keyframes player-avatar-pop {
+  from {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  to {
+    transform: scale(1);
+  }
+}

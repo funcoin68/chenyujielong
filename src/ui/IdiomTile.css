@@ -1,0 +1,73 @@
+.idiom-tile {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--tile-outline);
+  border-radius: var(--radius-card);
+  /* stamp edge: depth = 2px bottom edge, no blurry shadows (spec §2.4) */
+  box-shadow: 0 2px 0 var(--tile-outline);
+  font-family: var(--font-idiom);
+  color: var(--ink-primary);
+}
+
+.idiom-tile--chain {
+  font-size: 32px;
+}
+
+.idiom-tile--slot {
+  font-size: 40px;
+}
+
+.idiom-tile--results {
+  font-size: 24px;
+}
+
+.idiom-tile--head {
+  outline: 2px solid var(--brand-red);
+  transform: scale(1.05);
+}
+
+.idiom-tile-points {
+  font-family: var(--font-numerals);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.idiom-tile-rare {
+  color: var(--sun-yellow);
+  font-size: 18px;
+}
+
+.idiom-tile-owner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* chain-grow: pop in from scale(0.6) with overshoot (spec §2.5) */
+.idiom-tile--enter {
+  animation: idiom-tile-pop 300ms var(--spring);
+}
+
+@keyframes idiom-tile-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

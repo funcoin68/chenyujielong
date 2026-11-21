@@ -1,0 +1,20 @@
+.code-input {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: center;
+}
+
+.code-input-box {
+  width: 44px;
+  height: 56px;
+  border: 1px solid var(--tile-outline);
+  border-radius: var(--radius-chip);
+  box-shadow: 0 2px 0 var(--tile-outline);
+  background: var(--bg-canvas);
+  color: var(--ink-primary);
+  font-family: var(--font-numerals);
+  font-size: 24px;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+}

@@ -1,0 +1,73 @@
+.landing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-4);
+}
+
+.landing-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 420px;
+}
+
+.landing-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.landing-logo-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.landing-logo-arrow {
+  color: var(--ink-secondary);
+  font-family: var(--font-idiom);
+}
+
+.landing-wordmark {
+  margin: 0;
+  font-family: var(--font-idiom);
+  font-size: 32px;
+}
+
+.landing-tagline {
+  margin: 0;
+  color: var(--ink-secondary);
+}
+
+/* Google's brand-compliant neutral button (spec S1 safe rule) */
+.landing-google {
+  background: #fff;
+  color: var(--ink-primary);
+  border: 1px solid var(--tile-outline);
+  box-shadow: 0 2px 0 var(--tile-outline);
+}
+
+.landing-guest {
+  font-size: 14px;
+}
+
+.landing-steps {
+  margin: 0;
+  padding-left: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.landing-example {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-2) 0;
+}

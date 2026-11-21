@@ -1,10 +1,63 @@
-/* CYJ-5: static full-viewport gradient background (pure CSS, no network assets) */
+/* CYJ-6: design tokens + shared primitives from the UI/UX spec (§2.2–2.5).
+   Hex fallbacks first, OKLCH override for supporting browsers (spec §2.2). */
 
 :root {
-  /* Palette option A — "Sunrise Peach"; swap these three stops to change palette */
-  --bg-stop-1: #fff7e6;
-  --bg-stop-2: #ffe3ec;
-  --bg-stop-3: #e6f0ff;
+  /* Color system (spec §2.2) */
+  --bg-canvas: #fbf3e4;
+  --bg-canvas: oklch(0.97 0.02 90);
+  --bg-surface: #fffbf2;
+  --bg-surface: oklch(0.99 0.01 90);
+  --ink-primary: #3b2f2a;
+  --ink-primary: oklch(0.3 0.03 50);
+  --ink-secondary: #7a6a61;
+  --ink-secondary: oklch(0.5 0.03 60);
+  --brand-red: #e4573d;
+  --brand-red: oklch(0.62 0.19 35);
+  --brand-red-pressed: #c94832;
+  --brand-red-pressed: oklch(0.55 0.18 35);
+  --sun-yellow: #f5b942;
+  --sun-yellow: oklch(0.85 0.14 90);
+  --jade-green: #4caf7d;
+  --jade-green: oklch(0.68 0.13 160);
+  --sky-blue: #5b8def;
+  --sky-blue: oklch(0.65 0.12 240);
+  --error-coral: #d64545;
+  --error-coral: oklch(0.62 0.17 25);
+  --chain-link: #d8c7ae;
+  --chain-link: oklch(0.75 0.06 70);
+  --tile-outline: #e3d5c0;
+  --tile-outline: oklch(0.85 0.03 70);
+  --scrim: rgba(43, 35, 32, 0.5);
+
+  /* Player identity colors (spec §2.2 requires >= 3:1 vs bg-canvas).
+     Deviation: spec sample hexes for P2/P3/P4/P6 measure below 3:1 on the
+     canvas, so these are darkened variants of the same hues that pass. */
+  --player-1: #e4573d;
+  --player-2: #4a7bd9;
+  --player-3: #3e9267;
+  --player-4: #a87b0a;
+  --player-5: #9b6dd6;
+  --player-6: #d45b8c;
+
+  /* Typography (spec §2.3) */
+  --font-idiom: 'ZCOOL KuaiLe', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-heading: 'Baloo 2', 'ZCOOL KuaiLe', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-body: 'Nunito', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-numerals: 'Baloo 2', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+
+  /* Radius scale (spec §2.4) */
+  --radius-chip: 8px;
+  --radius-card: 16px;
+  --radius-modal: 24px;
+
+  /* Spacing, 4px base grid (spec §2.4) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 html,
@@ -15,14 +68,144 @@ body,
 
 body {
   margin: 0;
-  /* `fixed` pins the gradient to the viewport: no tiling seams or scroll artifacts */
-  background: linear-gradient(
-      135deg,
-      var(--bg-stop-1),
-      var(--bg-stop-2),
-      var(--bg-stop-3)
-    )
-    fixed
-    no-repeat;
-  color: #1f2937;
+  background: var(--bg-canvas);
+  color: var(--ink-primary);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
+  line-height: 1.2;
+}
+
+/* Visually hidden but screen-reader available */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Shared button primitives (spec §5): one primary per screen, red reserved
+   for the primary CTA and the current turn. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-card);
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 150ms var(--spring), background 150ms ease-out;
+}
+
+.btn:focus-visible,
+a:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--brand-red);
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  background: var(--brand-red);
+  color: #fff;
+  /* stamp edge: physical, chunky, toy-like (spec §2.4) */
+  box-shadow: 0 2px 0 var(--brand-red-pressed);
+}
+
+.btn-primary:hover {
+  background: var(--brand-red);
+}
+
+.btn-primary:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+
+.btn-primary:disabled,
+.btn-primary[aria-disabled='true'] {
+  background: var(--chain-link);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.btn-outline {
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  border: 1px solid var(--tile-outline);
+  box-shadow: 0 2px 0 var(--tile-outline);
+}
+
+.btn-outline:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+
+.btn-text {
+  background: none;
+  color: var(--ink-secondary);
+  min-height: 44px;
+}
+
+.btn-lg {
+  min-height: 56px;
+  border-radius: var(--radius-modal);
+  font-size: 18px;
+  width: 100%;
+}
+
+/* Chips (mode tags, timer/player counts in settings) */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-chip);
+  background: var(--bg-surface);
+  border: 1px solid var(--tile-outline);
+  color: var(--ink-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.chip-selected {
+  background: var(--brand-red);
+  border-color: var(--brand-red);
+  color: #fff;
+}
+
+/* Cards / panels */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--tile-outline);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+}
+
+/* Reduced motion (spec §2.5): springs become fades, animations instant */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
