@@ -2,6 +2,9 @@
 # Dispatched by maybe_aggregate.py on consensus. Deploys the PR to staging behind
 # its flag, verifies AC by AC, attaches ONE evidence permalink to the digest.
 # v4.9: concrete staging — Vercel preview + staging Supabase (bug #28 follow-up).
+# v4.9.1 (bug #31): GH_TOKEN on the coverage-delta + risk-checks steps (both call
+# the PR API; first green smoke exposed the KeyError). Step-scoped, NOT job-level:
+# the QA-agent step above must not see GITHUB_TOKEN (same containment as bug #19).
 # The deploy is no longer an abstract STAGING_DEPLOY_COMMAND var: build locally
 # with staging Supabase env baked in, `vercel build` + `deploy --prebuilt`, and
 # capture the REAL preview URL from CLI output (was: fabricated URL_BASE/pr-N).
@@ -97,10 +100,14 @@ jobs:
       - name: Smoke + coverage delta
         env:
           ENV_URL: ${{ needs.deploy-staging.outputs.url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # bug #31: coverage_delta.py hits the PR API
+
         run: |
           ${{ vars.SMOKE_COMMAND || 'curl -sfL --retry 5 --retry-delay 3 "$ENV_URL"' }} | tee /tmp/evidence/smoke.log
           python scripts/coverage_delta.py --pr "${{ inputs.pr_number }}" > /tmp/evidence/coverage.md
       - name: Risk-specific checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # bug #31: risk_checks.py hits the PR API
         run: python scripts/risk_checks.py --pr "${{ inputs.pr_number }}" --out /tmp/evidence/
 
       - uses: actions/upload-artifact@v4
