@@ -1,4 +1,8 @@
 # .github/workflows/review-agent.yml — stage 7: ONE parameterized clean-room reviewer
+# v4.9 bug #33: plan -> dontAsk (see stage3-proposal.yml header). plan mode now
+# depends on auto mode's server-side classifier, which the Kimi gateway cannot
+# serve; dontAsk enforces read-only deterministically. Reviewers only read the
+# diff + repo and emit a verdict - denied shell calls degrade gracefully.
 # Dispatched by stage 6 three times (persona = functional|security|standards).
 # v4.8: added issues:write — maybe_aggregate.py labels/comments via the issues
 # API and would 403 the same way as bug #23 once the swarm reached consensus.
@@ -25,7 +29,7 @@ jobs:
         with: { ref: main }
       - uses: actions/setup-node@v4
         with: { node-version: "26.13.0" }
-      - run: npm i -g @anthropic-ai/claude-code
+      - run: npm i -g "@anthropic-ai/claude-code@${{ vars.CLAUDE_CODE_VERSION || 'latest' }}"   # bug #33: set repo var CLAUDE_CODE_VERSION to freeze after validating a version
 
       - name: Assemble clean-room context (NO author reasoning)
         env:
@@ -45,7 +49,7 @@ jobs:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         timeout-minutes: 15
         run: |
-          claude -p --model "${{ vars.REVIEWER_MODEL || 'k3-256k' }}"             --permission-mode plan             --append-system-prompt "$(cat agent/review-${{ inputs.persona }}.md)"             "$(cat /tmp/context.md)" | tee /tmp/review_out.txt
+          claude -p --model "${{ vars.REVIEWER_MODEL || 'k3-256k' }}"             --permission-mode dontAsk             --append-system-prompt "$(cat agent/review-${{ inputs.persona }}.md)"             "$(cat /tmp/context.md)" | tee /tmp/review_out.txt
 
       - name: Post structured review + completion label
         env:

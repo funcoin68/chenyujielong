@@ -1,4 +1,7 @@
 # .github/workflows/stage3-respond.yml — reacts to human JIRA comments (Q&A loop)
+# v4.9 bug #33: plan -> dontAsk (see stage3-proposal.yml header). plan mode now
+# depends on auto mode's server-side classifier, which the Kimi gateway cannot
+# serve; dontAsk enforces read-only deterministically.
 # v4.1 fixes: round cap off-by-one (<=3, matching "max 3 rounds" in the PDF),
 # Kimi Code endpoint + model pinned.
 name: stage3-respond
@@ -19,7 +22,7 @@ jobs:
         with: { ref: main }
       - uses: actions/setup-node@v4
         with: { node-version: "26.13.0" }
-      - run: npm i -g @anthropic-ai/claude-code
+      - run: npm i -g "@anthropic-ai/claude-code@${{ vars.CLAUDE_CODE_VERSION || 'latest' }}"   # bug #33: set repo var CLAUDE_CODE_VERSION to freeze after validating a version
 
       - name: Fetch ticket + full comment thread
         env:
@@ -36,7 +39,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.KIMI_CODE_API_KEY }}
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         run: |
-          claude -p --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --permission-mode plan             --append-system-prompt "$(cat agent/proposal-instructions.md)
+          claude -p --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --permission-mode dontAsk             --append-system-prompt "$(cat agent/proposal-instructions.md)
           You are in ROUND ${{ inputs.round }} of a clarification exchange (max 3).
           The human answers since your last proposal are in the context.
           Answer remaining open questions, then post a REVISED proposal with

@@ -1,4 +1,10 @@
 # .github/workflows/stage3-proposal.yml — stage 3: analysis & proposal (plan mode)
+# v4.9 bug #33: --permission-mode plan -> dontAsk. Since Claude Code v2.1.283,
+# plan mode routes shell commands through auto mode's server-side safety
+# classifier; through the Kimi gateway that check can't run, so headless runs
+# die with "auto mode could not check some actions". dontAsk (built for
+# locked-down CI) allows reads + pre-approved tools and denies everything else
+# WITHOUT any classifier or human - strictly read-only, no server dependency.
 # Dispatched by the orchestrator after stage 2 (context inheritance).
 # v4.1 fixes: single canonical version (the pack shipped two conflicting copies),
 # Kimi Code endpoint + model pinned (PDF §6.1), CLI installed on the runner.
@@ -19,7 +25,7 @@ jobs:
         with: { ref: main }
       - uses: actions/setup-node@v4
         with: { node-version: "26.13.0" }
-      - run: npm i -g @anthropic-ai/claude-code   # ephemeral runner: install each run
+      - run: npm i -g "@anthropic-ai/claude-code@${{ vars.CLAUDE_CODE_VERSION || 'latest' }}"   # ephemeral runner: install each run. bug #33: set repo var CLAUDE_CODE_VERSION to freeze a validated version
 
       - name: Fetch ticket + assemble context
         env:
@@ -36,7 +42,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.KIMI_CODE_API_KEY }}
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         run: |
-          claude -p --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --permission-mode plan             --append-system-prompt "$(cat agent/proposal-instructions.md)"             "$(cat /tmp/context.md)" > /tmp/out.txt
+          claude -p --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --permission-mode dontAsk             --append-system-prompt "$(cat agent/proposal-instructions.md)"             "$(cat /tmp/context.md)" > /tmp/out.txt
 
       - name: Post proposal / questions to JIRA
         env:
