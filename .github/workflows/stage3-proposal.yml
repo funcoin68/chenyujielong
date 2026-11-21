@@ -1,4 +1,9 @@
 # .github/workflows/stage3-proposal.yml — stage 3: analysis & proposal (plan mode)
+# v4.9 bug #35: --add-dir /tmp/attachments on the claude call. dontAsk
+# allows reads only inside WORKING DIRECTORIES; fetched Jira attachments
+# live in /tmp/attachments (outside the checkout), so stage-3 agents could
+# see the 12k inline preview but not the full files. --add-dir makes the
+# dir a working directory: reads allowed, writes still denied by dontAsk.
 # v4.9 bug #34: fetch Jira attachments into context (see scripts/fetch_attachments.py).
 # v4.9 bug #33: --permission-mode plan -> dontAsk. Since Claude Code v2.1.283,
 # plan mode routes shell commands through auto mode's server-side safety
@@ -45,7 +50,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.KIMI_CODE_API_KEY }}
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         run: |
-          claude -p --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --permission-mode dontAsk             --append-system-prompt "$(cat agent/proposal-instructions.md)"             "$(cat /tmp/context.md)" > /tmp/out.txt
+          claude -p --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --permission-mode dontAsk --add-dir /tmp/attachments             --append-system-prompt "$(cat agent/proposal-instructions.md)"             "$(cat /tmp/context.md)" > /tmp/out.txt
 
       - name: Post proposal / questions to JIRA
         env:
