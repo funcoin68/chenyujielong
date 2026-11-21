@@ -4,6 +4,7 @@ import { PROFILE } from '../mock/data'
 import './Profile.css'
 
 const MEDALS = ['🥇', '🥈', '🥉']
+const ordinal = (n: number) => (n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`)
 
 /** S8 — Profile & Stats. */
 export default function Profile() {
@@ -62,8 +63,7 @@ export default function Profile() {
             <li key={g.date} className="card profile-history-row">
               <span aria-hidden="true">{MEDALS[g.placement - 1] ?? `#${g.placement}`}</span>
               <span>
-                {g.placement === 1 ? '1st' : g.placement === 2 ? '2nd' : `${g.placement}th`} of{' '}
-                {g.playerCount}
+                {ordinal(g.placement)} of {g.playerCount}
               </span>
               <span className="profile-history-date">{g.date}</span>
             </li>

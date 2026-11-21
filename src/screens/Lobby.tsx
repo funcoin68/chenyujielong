@@ -8,6 +8,7 @@ import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
 import './Lobby.css'
 
 const MEDALS = ['🥇', '🥈', '🥉']
+const ordinal = (n: number) => (n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`)
 
 /** S2 — Lobby (Home). */
 export default function Lobby() {
@@ -110,8 +111,7 @@ export default function Lobby() {
                 <Link to={`/room/${ROOM.id}/results`} className="card lobby-recent-row">
                   <span aria-hidden="true">{MEDALS[g.placement - 1] ?? `#${g.placement}`}</span>
                   <span>
-                    {g.placement === 1 ? '1st' : g.placement === 2 ? '2nd' : `${g.placement}th`} ·{' '}
-                    {g.playerCount} players
+                    {ordinal(g.placement)} · {g.playerCount} players
                   </span>
                   <span className="lobby-recent-date">{g.date}</span>
                 </Link>

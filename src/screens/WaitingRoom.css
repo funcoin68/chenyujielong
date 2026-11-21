@@ -142,7 +142,7 @@
   }
 
   .waiting-topbar,
-  .waiting-chat,
+  .waiting > section[aria-label='Quick chat'],
   .waiting > .btn-primary {
     grid-column: 1 / -1;
   }
