@@ -14,6 +14,11 @@
 # CYJ-3 agent rewrote all 8 workflows (node 20 -> 26) instead of implementing, and
 # only the PAT's missing workflow scope stopped it. Defense in depth: instructions
 # say no, this guard enforces it, the token makes it physically impossible.
+# v4.10 bug #40: empty-diff guard no longer hard-fails. A re-dispatched ticket
+# whose work is already merged (CYJ-7/PR #5) legitimately produces no changes -
+# the branch resumes == main and the agent rightly writes nothing. The old guard
+# burned a red run and destroyed the evidence; the step now judges branch-vs-main,
+# dumps the agent output + git state into the log, and exits green when empty.
 # Blast radius stays small: this step env holds only KIMI_CODE_API_KEY; pushes use the
 # branch-scoped AGENT_PUSH_TOKEN and the ruleset still blocks main.
 name: stage5-implement
@@ -91,7 +96,7 @@ jobs:
         run: |
           claude -p --permission-mode bypassPermissions --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --append-system-prompt "$(cat agent/implementation-instructions.md)"             "$(cat /tmp/context.md)
           APPROVED PROPOSAL (your spec):
-          $(cat /tmp/proposal.md)"
+          $(cat /tmp/proposal.md)" 2>&1 | tee /tmp/implement.log   # bug #40: tee so the empty-diff path can dump what the agent actually did
 
       - name: Run repo verification
         if: steps.dup.outputs.exists != 'true'
@@ -120,13 +125,24 @@ jobs:
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
         run: |
           git add -A
-          # Refuse to open an empty PR: if the agent wrote nothing (e.g. model
-          # error, write-block), fail loudly instead of pushing noise.
-          if git diff --cached --quiet; then
-            echo "::error::Agent produced no changes - not opening an empty PR. Check the Implement step log." >&2
-            exit 1
+          # bug #40: commit only if this run produced changes, then judge the
+          # BRANCH against main - not the staged tree. On a resumed branch whose
+          # work already merged, the staged diff is empty AND branch == main:
+          # that is a no-op, not an agent failure. Dump evidence, exit green.
+          if ! git diff --cached --quiet; then
+            git commit -m "agent: ${{ inputs.ticket_key }} implementation"
           fi
-          git commit -m "agent: ${{ inputs.ticket_key }} implementation"
+          git fetch origin main
+          if git diff --quiet origin/main...HEAD; then
+            echo "::notice::Nothing to ship: branch matches main (ticket already merged, or agent made no changes). Not opening an empty PR."
+            echo "=== git status ==="
+            git status --short --branch
+            echo "=== branch commits not on main ==="
+            git log --oneline origin/main..HEAD || true
+            echo "=== tail of agent output (implement step) ==="
+            tail -n 120 /tmp/implement.log 2>/dev/null || echo "(no implement log captured)"
+            exit 0
+          fi
           # --force-with-lease: agent-owned branch; overwrites only if the remote
           # is exactly what we fetched (rebase path), never clobbers human work.
           git push --force-with-lease -u origin "agent/${{ inputs.ticket_key }}"
