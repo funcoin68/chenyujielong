@@ -15,7 +15,10 @@ export interface AuthUser {
 /**
  * Resolve the session cookie (httpOnly, set by the auth Edge Function) to the
  * signed-in user. Any failure — no session, expired, network down — resolves
- * to null so callers fall back to the mock identity.
+ * to null so callers fall back to the mock identity. Failures that mean
+ * broken auth infrastructure (network throw, malformed 200) also warn, so
+ * with flag-cyj-7 on "auth broken" is distinguishable from "not signed in"
+ * (rule 12); a plain 401 stays quiet — it is the normal signed-out path.
  *
  * The "auth configured?" guard lives HERE (one home): a caller that forgets
  * it would otherwise fetch `<undefined>/auth/me` and fail silently (rule 12).
@@ -27,9 +30,13 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
     if (!res.ok) return null
     const body = await res.json()
     const user = body?.user
-    if (!user) return null
+    if (!user) {
+      console.warn('fetchCurrentUser: 200 response without a user payload')
+      return null
+    }
     return { ...user, avatar_url: httpsUrlOrNull(user.avatar_url) }
-  } catch {
+  } catch (err) {
+    console.warn('fetchCurrentUser: session fetch failed', err)
     return null
   }
 }

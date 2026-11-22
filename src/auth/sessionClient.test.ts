@@ -25,6 +25,7 @@ function mockFetch(impl: () => Promise<Response>) {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   configState.functionsUrl = 'https://fn.example'
 })
 
@@ -58,14 +59,25 @@ describe('fetchCurrentUser', () => {
     expect(await fetchCurrentUser()).toBeNull()
   })
 
-  it('resolves null when the network request throws', async () => {
+  it('resolves null with a warning when the network request throws', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     mockFetch(() => Promise.reject(new Error('network down')))
     expect(await fetchCurrentUser()).toBeNull()
+    expect(warn).toHaveBeenCalledOnce()
   })
 
-  it('resolves null when a 200 body carries no user', async () => {
+  it('resolves null with a warning when a 200 body carries no user', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     mockFetch(() => Promise.resolve(new Response('{}', { status: 200 })))
     expect(await fetchCurrentUser()).toBeNull()
+    expect(warn).toHaveBeenCalledOnce()
+  })
+
+  it('does not warn on a 401 — the normal signed-out path stays quiet', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockFetch(() => Promise.resolve(new Response('{"error":"no session"}', { status: 401 })))
+    expect(await fetchCurrentUser()).toBeNull()
+    expect(warn).not.toHaveBeenCalled()
   })
 
   it('drops a non-https avatar_url so arbitrary schemes never reach <img src>', async () => {
