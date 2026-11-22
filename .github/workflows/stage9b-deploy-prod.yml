@@ -53,7 +53,11 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: npx --yes supabase@${{ vars.SUPABASE_CLI_VERSION || 'latest' }} db push
+          SUPABASE_PROD_REF: ${{ vars.SUPABASE_PROD_REF }}
+        # --remote=<ref> is REQUIRED: db push defaults to the local Docker stack
+        # even when a project is linked (bug #38). --yes = headless; --password
+        # supplies the DB password explicitly.
+        run: npx --yes supabase@${{ vars.SUPABASE_CLI_VERSION || 'latest' }} db push --remote="$SUPABASE_PROD_REF" --password "$SUPABASE_DB_PASSWORD" --yes
 
       - name: Deploy edge functions
         env:
