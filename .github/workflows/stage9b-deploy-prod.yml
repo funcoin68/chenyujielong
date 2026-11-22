@@ -9,7 +9,16 @@ name: stage 9b — deploy production
 on:
   push:
     branches: [main]
-  workflow_dispatch: {} # manual re-deploy of current main
+    # 2026-11-22 change request: app-untouched pushes must NOT redeploy prod.
+    # paths-ignore skips the run only when EVERY changed file matches — a
+    # mixed push (src/ + docs/) still deploys. Applies to push only;
+    # workflow_dispatch below always works for a manual re-deploy.
+    paths-ignore:
+      - '.github/workflows/**'
+      - 'agent/**'
+      - 'docs/**'
+      - 'scripts/**'
+  workflow_dispatch: {} # manual re-deploy of current main — never skipped
 
 permissions:
   contents: read
