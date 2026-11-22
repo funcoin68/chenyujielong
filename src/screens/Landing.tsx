@@ -6,7 +6,7 @@ import { Modal } from '../ui/Modal'
 import { DEMO_CHAIN, PLAYERS_BY_ID, ROOM } from '../mock/data'
 import { hasFlag } from '../flags'
 import { FUNCTIONS_URL } from '../config'
-import { buildAuthStartUrl } from '../auth/authStart'
+import { navigateTo, startGoogleSignIn } from '../auth/authStart'
 import './Landing.css'
 
 /** Google "G" mark (multicolor), per Google's brand asset guidelines. */
@@ -38,17 +38,26 @@ export default function Landing() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [howToOpen, setHowToOpen] = useState(false)
+  const [signInFailed, setSignInFailed] = useState(false)
   const signInRef = useRef<HTMLButtonElement>(null)
   // AC #4: the OAuth callback bounces failures back here as ?auth_error=…
   const authError = searchParams.get('auth_error')
 
-  const onSignIn = () => {
+  const onSignIn = async () => {
     // flag-cyj-7: real Google OAuth via the auth Edge Function. Flag off (or
     // functions URL not configured) keeps the mock navigate to the lobby.
-    // The flags query rides along to /auth/google/start, which embeds it in
-    // the OAuth state so it survives the round-trip back to /lobby.
+    // The start endpoint is fetched programmatically (a navigation cannot set
+    // the apikey header the gateway requires) and returns the Google
+    // authorize URL to navigate to; the flags query rides along so the
+    // function can embed it in the OAuth state for the trip back to /lobby.
     if (hasFlag('flag-cyj-7', searchParams) && FUNCTIONS_URL) {
-      window.location.assign(buildAuthStartUrl(FUNCTIONS_URL, searchParams.get('flags')))
+      setSignInFailed(false)
+      try {
+        navigateTo(await startGoogleSignIn(FUNCTIONS_URL, searchParams.get('flags')))
+      } catch (err) {
+        console.warn('onSignIn: auth start failed', err)
+        setSignInFailed(true)
+      }
     } else {
       navigate('/lobby')
     }
@@ -68,9 +77,9 @@ export default function Landing() {
         <h1 className="landing-wordmark">成语接龙</h1>
         <p className="landing-tagline">Chain idioms. Beat your friends.</p>
 
-        {authError && (
+        {(authError || signInFailed) && (
           <p className="landing-auth-error" role="alert">
-            Sign-in failed ({authError}). Please try again.
+            Sign-in failed{authError ? ` (${authError})` : ''}. Please try again.
           </p>
         )}
 
