@@ -4,6 +4,10 @@
 # has an npm-test fallback so an unset repo var cannot blank out run:.
 # v4.1 fix: the validate job now requires merged == true (it previously ran
 # post-merge QA on PRs that were closed WITHOUT merging).
+# v4.6 bug #42: permissions pull-requests: write (draft corrections PR 403'd);
+# capture now uploads the outcome record as an artifact and measure downloads it
+# (jobs run on separate runners — the record never left the capture runner);
+# measure gains the missing actions/checkout (scripts/ was never on its runner).
 name: stage10-learn
 on:
   pull_request:
@@ -11,7 +15,7 @@ on:
 
 permissions:
   contents: write
-  pull-requests: read
+  pull-requests: write   # bug #42: encode job POSTs the draft corrections PR; 'read' 403'd
 
 jobs:
   capture:   # what happened on this PR -> structured outcome record
@@ -29,6 +33,11 @@ jobs:
           python scripts/build_outcome_record.py --pr ${{ github.event.pull_request.number }}             --out outcomes/$(date +%Y%m%d)-pr${{ github.event.pull_request.number }}.json
           # record: ticket, proposal round trips, verdicts, fix rounds, diff
           # size, cycle time, approver, what changed in review
+      - uses: actions/upload-artifact@v4        # bug #42: measure runs on a FRESH runner;
+        with:                                    # hand the record over via artifact
+          name: outcome-pr${{ github.event.pull_request.number }}
+          path: outcomes/
+          retention-days: 90
 
   encode:    # review-induced changes -> correction candidates (human-approved)
     if: github.event.pull_request.merged == true
@@ -51,6 +60,12 @@ jobs:
     needs: capture
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }                     # bug #42: scripts/ is not on the runner without checkout
+      - uses: actions/download-artifact@v4      # bug #42: outcome record from the capture job
+        with:
+          name: outcome-pr${{ github.event.pull_request.number }}
+          path: outcomes/
       - env:
           METRICS_DB_DSN: "${{ secrets.METRICS_DB_DSN }}"
         run: python scripts/push_metrics.py --pr ${{ github.event.pull_request.number }}

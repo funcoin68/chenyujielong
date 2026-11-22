@@ -10,6 +10,13 @@ cand_file = f"/tmp/corrections-{pr}.md"
 if not os.path.exists(cand_file):
     print("no candidates file — run extract_corrections.py first"); raise SystemExit(0)
 cand = open(cand_file).read()
+# bug #42 loop guard: merging a corrections PR re-triggers stage 10 on THAT PR.
+# Its commits never contain "address review", so extract_corrections.py writes
+# "No review-induced changes" — without this guard we'd open yet another draft
+# PR, whose merge re-triggers stage 10 again: an infinite draft-PR loop.
+if "No review-induced changes" in cand:
+    print("no review-induced changes — nothing to admit; not opening an empty corrections PR")
+    raise SystemExit(0)
 path = "docs/agent/CORRECTIONS.md"
 try:
     cur = gh("GET", f"/contents/{path}")
