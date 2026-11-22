@@ -2,7 +2,7 @@
 <!-- GENERATED FILE — do not edit by hand. Narrative sections come from
      docs/agent/pack-curated.md; mechanical sections from git. Regenerate:
      python scripts/build_context_pack.py (nightly workflow opens the PR). -->
-<!-- source commit: fc4a2c9 · generated: 2026-11-22 · pack owner: funcoin68 -->
+<!-- source commit: 1d9d724 · generated: 2026-11-22 · pack owner: funcoin68 -->
 
 ## 0. Mission
 成语接龙 (Chinese idiom-chain) multiplayer web game — players take turns
@@ -12,11 +12,11 @@ infrastructure (scripts/, .github/workflows/) lives in the same repo as the
 game. Keep game code and pipeline code conceptually separate.
 
 ## 1. Module map
-- `src/lib/` (4 files) — Shared rule primitives (Deno Edge Function + Vitest both import). chain.test.ts, chain.ts, validateMove.test.ts, validateMove.ts
-- `src/screens/` (14 files) — Route-level screens (spec §3). Gameplay.css, Gameplay.tsx, Landing.css, Landing.tsx, Lobby.css, Lobby.tsx, Profile.css, Profile.tsx … (+6)
+- `src/lib/` (10 files) — Shared rule primitives (Deno Edge Function + Vitest both import). chain.test.ts, chain.ts, flow.test.ts, flow.ts, googleIdToken.test.ts, googleIdToken.ts, session.test.ts, session.ts … (+2)
+- `src/screens/` (15 files) — Route-level screens (spec §3). Gameplay.css, Gameplay.tsx, Landing.css, Landing.tsx, Lobby.css, Lobby.test.tsx, Lobby.tsx, Profile.css … (+7)
 - `src/ui/` (13 files) — Reusable components (one CSS per component). ChainView.css, ChainView.tsx, CodeInput.css, CodeInput.tsx, IdiomTile.css, IdiomTile.tsx, Modal.css, Modal.test.tsx … (+5)
 - `src/mock/` (1 files) — Fixture data — the entire current 'backend'. data.ts
-- `supabase/functions/` (3 files) — Edge Functions (Deno; transport-only, rules in src/lib). README.md, config.toml, index.ts
+- `supabase/functions/` (5 files) — Edge Functions (Deno; transport-only, rules in src/lib). README.md, config.toml, config.toml, index.ts, index.ts
 - `scripts/` (33 files) — PIPELINE glue (stage 1-10) — not game code. _pipeline_lib.py, assemble_context.py, build_context_pack.py, build_outcome_record.py, build_review_packet.py, check_coverage_floor.py, check_diff_size.py, check_merge_eligibility.py … (+25)
 - `.github/workflows/` (11 files) — PIPELINE workflows — human-owned, agents never edit. ci-pr-gates.yml, onboarding-pack.yml, review-agent.yml, stage10-learn.yml, stage3-proposal.yml, stage3-respond.yml, stage5-implement.yml, stage7-fix.yml … (+3)
 - `docs/agent/` (4 files) — Agent memory (this pack, CORRECTIONS.md). CORRECTIONS.md, CYJ-6-implementation-notes.md, onboarding-pack.md, pack-curated.md
@@ -82,32 +82,45 @@ migrations via `supabase db diff` only, never hand-edited after apply
 
 ## 7. Hotspots & ownership
 App code (most-changed first, last 90d — high churn = review carefully, keep tests close):
-- `package.json` — 4 commits
+- `package.json` — 5 commits
+- `src/screens/Landing.tsx` — 4 commits
+- `src/screens/Lobby.tsx` — 4 commits
+- `src/auth/sessionClient.test.ts` — 3 commits
+- `src/auth/sessionClient.ts` — 3 commits
+- `src/lib/auth/flow.test.ts` — 3 commits
+- `src/lib/auth/flow.ts` — 3 commits
+- `src/App.render.test.tsx` — 3 commits
 - `src/main.tsx` — 3 commits
 - `.gitignore` — 3 commits
-- `src/screens/Lobby.tsx` — 2 commits
-- `src/screens/Profile.tsx` — 2 commits
-- `src/screens/WaitingRoom.css` — 2 commits
-- `src/App.render.test.tsx` — 2 commits
-- `src/App.tsx` — 2 commits
-- `src/ui/TimerRing.css` — 2 commits
-- `src/ui/TimerRing.tsx` — 2 commits
-- `index.html` — 2 commits
-- `src/gradient.test.ts` — 2 commits
-- `src/index.css` — 2 commits
-- `tsconfig.tsbuildinfo` — 2 commits
-- `src/lib/validateMove.test.ts` — 2 commits
+- `src/config.ts` — 2 commits
+- `src/screens/Lobby.test.tsx` — 2 commits
+- `supabase/functions/auth/index.ts` — 2 commits
+- `src/screens/Lobby.css` — 2 commits
+- `src/lib/auth/googleIdToken.ts` — 2 commits
 
 Pipeline infrastructure (churn here = pipeline debugging, not app risk):
+- `.github/workflows/stage5-implement.yml` — 10 commits
+- `.github/workflows/stage7-fix.yml` — 8 commits
 - `.github/workflows/ci-pr-gates.yml` — 8 commits
-- `.github/workflows/stage5-implement.yml` — 8 commits
 - `.github/workflows/stage8b-qa-evidence.yml` — 8 commits
-- `.github/workflows/stage7-fix.yml` — 7 commits
-- `.github/workflows/stage3-proposal.yml` — 5 commits
+- `.github/workflows/stage10-learn.yml` — 5 commits
 
 Ownership: single service `idiom-game` (repo-registry.yaml), owner funcoin68, risk tier 3. `.github/workflows/` is human-owned — workflow diffs from an agent are auto-reverted.
 
 ## 8. Recent decisions (rolling, last 90 days, from git log)
+- 2026-11-22 — CYJ-9: carry publishable anon key as apikey param on auth-start navigation
+- 2026-11-22 — stage9b: skip prod deploy when push touches only .github/workflows, agent/, docs/, scripts/ (paths-ignore)
+- 2026-11-22 — fix #42: stage10 encode perms + outcome-record artifact handoff + measure checkout + corrections loop guard
+- 2026-11-22 — agent: address review comments (round 2)
+- 2026-11-22 — agent: address review comments (round 1)
+- 2026-11-22 — fix #41: PR body comes from agent-written /tmp/pr_body.md — placeholder modules:[] raced the scope guard
+- 2026-11-22 — agent: CYJ-8 implementation — session consumption + visible callback failures
+- 2026-11-22 — fix #40: stage5 empty-diff guard - branch-vs-main check, evidence dump, green on no-op
+- 2026-11-22 — CYJ-7 checkpoint 3: auth Edge Function + first migration (users, sessions)
+- 2026-11-22 — CYJ-7 checkpoint 2: flag-gated Landing sign-in + auth_error indicator
+- 2026-11-22 — CYJ-7 checkpoint 1: auth decision layer in src/lib/auth (token verify, sessions, flow)
+- 2026-11-22 — fix-39: tolerate --- delimiters inside the agent's yaml fence
+- 2026-11-22 — context: real onboarding pack + nightly refresh + wire pack into stage 7
 - 2026-11-21 — fix(stage9b): db push needs --remote=<ref> --password --yes (defaults to local stack)
 - 2026-11-21 — ci: stage 9b — deploy to Vercel prod + Supabase prod on merge to main
 - 2026-11-21 — fix-37: normalize verdict contract + aggregator self-heal
@@ -115,19 +128,6 @@ Ownership: single service `idiom-game` (repo-registry.yaml), owner funcoin68, ri
 - 2026-11-21 — agent: CYJ-6 implementation
 - 2026-11-21 — CYJ-6: fix ordinal copy (3rd not 3th), waiting-room desktop grid span
 - 2026-11-21 — CYJ-6 checkpoint 3: screens + routing
-- 2026-11-21 — CYJ-6 checkpoint 2: mock fixtures + shared ui components
-- 2026-11-21 — CYJ-6 checkpoint 1: design tokens, fonts, react-router-dom
-- 2026-11-21 — pipeline: bug #35 — stage-3 agents read full Jira attachments via --add-dir
-- 2026-11-21 — pipeline: bug #34 — fetch Jira ticket attachments into agent context
-- 2026-11-21 — agent: address review comments (round 1)
-- 2026-11-21 — agent: CYJ-5 implementation
-- 2026-11-21 — CYJ-5: static multi-stop gradient background
-- 2026-11-20 — pipeline: bug #33 — read-only stages use dontAsk (plan now needs the auto-mode classifier)
-- 2026-11-20 — chore: upgrade Node.js 20 -> 26.13.0 (human infra change)
-- 2026-11-20 — pipeline: bug #32 — .github/ containment guard in stage5/stage7 + instruction hardening
-- 2026-11-20 — fix(#31): GH_TOKEN for coverage_delta + risk_checks steps in stage8b
-- 2026-11-20 — fix(#30): supabase --remote=<ref> equals-sign syntax
-- 2026-11-20 — fix(#29): supabase functions deploy --remote --yes (headless confirmation + deprecated flag)
 
 ## 9. Open risks / known debt
 - No persistence layer: no schema, no migrations, no Realtime — game state is
