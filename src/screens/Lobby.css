@@ -48,6 +48,12 @@
   border-radius: 50%;
 }
 
+/* signed-in user's Google avatar (flag-cyj-7); matches the PlayerAvatar circle */
+.lobby-avatar-img {
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 /* presence dot: green = online (spec S2) */
 .lobby-presence {
   position: absolute;

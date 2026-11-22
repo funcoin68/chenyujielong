@@ -61,40 +61,44 @@ describe('handleCallback — Google error branch (AC #4)', () => {
 })
 
 describe('handleCallback — state validation', () => {
-  it('rejects a state mismatch with 401 and no session cookie', async () => {
+  // CYJ-8: failures must land back on the app with a visible error (AC #5),
+  // not a raw 401 JSON page.
+  it('redirects a state mismatch to the app with auth_error and no session', async () => {
     const decision = await handleCallback({
       query: query({ code: 'c', state: 'from-google' }),
       stateCookie: 'from-cookie',
       claims: CLAIMS,
       appBaseUrl: APP,
     })
-    expect(decision.status).toBe(401)
-    expect(decision.redirect).toBeUndefined()
+    expect(decision.status).toBe(302)
+    expect(decision.redirect).toBe(`${APP}/?auth_error=state_mismatch`)
     expect(sessionCookieValue(decision.setCookies)).toBeUndefined()
     expect(decision.session).toBeUndefined()
   })
 
-  it('rejects a missing state cookie with 401', async () => {
+  it('redirects a missing state cookie to the app with auth_error', async () => {
     const decision = await handleCallback({
       query: query({ code: 'c', state: 'from-google' }),
       stateCookie: undefined,
       claims: CLAIMS,
       appBaseUrl: APP,
     })
-    expect(decision.status).toBe(401)
+    expect(decision.status).toBe(302)
+    expect(decision.redirect).toBe(`${APP}/?auth_error=state_mismatch`)
     expect(decision.session).toBeUndefined()
   })
 })
 
 describe('handleCallback — invalid ID token (AC #3)', () => {
-  it('returns 401 and sets NO session cookie when token verification failed', async () => {
+  it('redirects to the app with auth_error and NO session cookie when token verification failed', async () => {
     const decision = await handleCallback({
       query: query({ code: 'c', state: 'st' }),
       stateCookie: 'st',
       claims: null,
       appBaseUrl: APP,
     })
-    expect(decision.status).toBe(401)
+    expect(decision.status).toBe(302)
+    expect(decision.redirect).toBe(`${APP}/?auth_error=invalid_token`)
     expect(sessionCookieValue(decision.setCookies)).toBeUndefined()
     expect(decision.session).toBeUndefined()
     expect(decision.userUpsert).toBeUndefined()
@@ -107,7 +111,8 @@ describe('handleCallback — invalid ID token (AC #3)', () => {
       claims: { ...CLAIMS, email: undefined },
       appBaseUrl: APP,
     })
-    expect(decision.status).toBe(401)
+    expect(decision.status).toBe(302)
+    expect(decision.redirect).toBe(`${APP}/?auth_error=invalid_token`)
     expect(decision.session).toBeUndefined()
   })
 })

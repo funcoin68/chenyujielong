@@ -80,16 +80,26 @@ export async function handleCallback(input: CallbackInput): Promise<CallbackDeci
   }
 
   // Anti-CSRF: the state Google echoed must match the cookie we set at start.
+  // CYJ-8 AC #5: failures bounce back to the app with a visible error — never
+  // a raw 401 JSON page the user can't recover from.
   const state = input.query.get('state')
   if (!state || !input.stateCookie || state !== input.stateCookie) {
-    return { status: 401, error: 'oauth state mismatch', setCookies: [clearStateCookie()] }
+    return {
+      status: 302,
+      redirect: `${base}/?auth_error=state_mismatch`,
+      setCookies: [clearStateCookie()],
+    }
   }
 
   // AC #3: invalid/expired signature, wrong audience, wrong issuer (or a
-  // token without an email to key the user row on) — 401, no session cookie.
+  // token without an email to key the user row on) — no session cookie.
   const { claims } = input
   if (!claims || !claims.email) {
-    return { status: 401, error: 'invalid google id token', setCookies: [clearStateCookie()] }
+    return {
+      status: 302,
+      redirect: `${base}/?auth_error=invalid_token`,
+      setCookies: [clearStateCookie()],
+    }
   }
 
   // AC #1/#2: upsert keyed on email (PostgREST merge-duplicates reuses an

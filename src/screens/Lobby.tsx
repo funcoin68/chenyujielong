@@ -1,10 +1,13 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CodeInput } from '../ui/CodeInput'
 import { Modal } from '../ui/Modal'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
 import { RoomSettings } from './RoomSettings'
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
+import { hasFlag } from '../flags'
+import { FUNCTIONS_URL } from '../config'
+import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import './Lobby.css'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -13,8 +16,25 @@ const ordinal = (n: number) => (n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3
 /** S2 — Lobby (Home). */
 export default function Lobby() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
   const [joinOpen, setJoinOpen] = useState(false)
+  // flag-cyj-7: consume the OAuth session (CYJ-8). Flag off / no session /
+  // any fetch failure leaves authUser null and the render identical to the
+  // mock — AC: no visible change to the default view.
+  const authEnabled = hasFlag('flag-cyj-7', searchParams) && Boolean(FUNCTIONS_URL)
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  useEffect(() => {
+    if (!authEnabled) return
+    let cancelled = false
+    fetchCurrentUser().then((user) => {
+      if (!cancelled) setAuthUser(user)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [authEnabled])
+  const displayName = authUser?.display_name ?? PROFILE.name
 
   return (
     <main className="lobby">
@@ -33,8 +53,12 @@ export default function Lobby() {
               />
             </svg>
           </button>
-          <Link to="/profile" className="lobby-avatar-link" aria-label={`Profile of ${PROFILE.name}`}>
-            <PlayerAvatar name={PROFILE.name} colorVar="var(--player-4)" size={40} />
+          <Link to="/profile" className="lobby-avatar-link" aria-label={`Profile of ${displayName}`}>
+            {authUser?.avatar_url ? (
+              <img className="lobby-avatar-img" src={authUser.avatar_url} alt="" width={40} height={40} />
+            ) : (
+              <PlayerAvatar name={displayName} colorVar="var(--player-4)" size={40} />
+            )}
             <span className="lobby-presence" aria-hidden="true" />
           </Link>
         </div>
@@ -43,7 +67,7 @@ export default function Lobby() {
       <div className="lobby-columns">
         <section className="lobby-actions" aria-label="Actions">
           <p className="lobby-greeting">
-            Hi, {PROFILE.name}! Ready to chain? 🔥 streak: {PROFILE.streak}
+            Hi, {displayName}! Ready to chain? 🔥 streak: {PROFILE.streak}
           </p>
           <button
             type="button"
