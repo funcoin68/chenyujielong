@@ -43,11 +43,12 @@ describe('session cookies', () => {
     expect(cookie).toContain(`Max-Age=${SESSION_MAX_AGE_SECONDS}`)
   })
 
-  it('serializes the OAuth state cookie httpOnly with a 10-minute TTL', () => {
+  it('serializes the OAuth state cookie httpOnly, SameSite=None, with a 10-minute TTL (CYJ-10: set from a cross-site fetch response)', () => {
     const cookie = serializeStateCookie('state123')
     expect(cookie).toContain(`${STATE_COOKIE}=state123`)
     expect(cookie).toContain('HttpOnly')
-    expect(cookie).toContain('SameSite=Lax')
+    expect(cookie).toContain('Secure')
+    expect(cookie).toContain('SameSite=None')
     expect(cookie).toContain('Max-Age=600')
   })
 

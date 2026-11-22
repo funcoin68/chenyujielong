@@ -117,12 +117,16 @@ async function handleStart(req: Request): Promise<Response> {
   const flags = new URL(req.url).searchParams.get('flags')
   const state = encodeStateWithFlags(generateState(), flags)
   const headers = withCors(new Headers())
-  headers.set(
-    'Location',
-    buildAuthorizeUrl({ clientId: CONFIG.clientId, redirectUri: REDIRECT_URI, state }),
-  )
   headers.append('Set-Cookie', serializeStateCookie(state))
-  return new Response(null, { status: 302, headers })
+  // CYJ-10: the client fetches this endpoint (a top-level navigation cannot
+  // set the apikey header the gateway requires), and a cross-origin fetch
+  // cannot consume a 302 — hand the authorize URL back in a CORS-readable
+  // body and let the client drive the navigation to Google.
+  return json(
+    { redirect: buildAuthorizeUrl({ clientId: CONFIG.clientId, redirectUri: REDIRECT_URI, state }) },
+    200,
+    headers,
+  )
 }
 
 async function handleGoogleCallback(req: Request): Promise<Response> {
@@ -219,7 +223,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const path = new URL(req.url).pathname
   if (req.method === 'OPTIONS') {
     const headers = withCors(new Headers())
-    headers.set('Access-Control-Allow-Headers', 'Content-Type')
+    // CYJ-10: the apikey credential header triggers a preflight on the
+    // client's cross-site /auth/google/start fetch — it must be allowed.
+    headers.set('Access-Control-Allow-Headers', 'Content-Type, apikey')
+    headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
     return new Response(null, { status: 204, headers })
   }
   if (req.method !== 'GET') {
