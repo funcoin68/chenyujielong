@@ -3,7 +3,7 @@
 // supabase/functions/README.md): this file owns env checks, Google/PostgREST
 // fetches, and HTTP responses; src/lib/auth/ owns every branch decision.
 import { verifyGoogleIdToken } from '../../../src/lib/auth/googleIdToken.ts'
-import { buildAuthorizeUrl, generateState, handleCallback } from '../../../src/lib/auth/flow.ts'
+import { buildAuthorizeUrl, encodeStateWithFlags, generateState, handleCallback } from '../../../src/lib/auth/flow.ts'
 import type { UserUpsert } from '../../../src/lib/auth/flow.ts'
 import {
   SESSION_COOKIE,
@@ -111,8 +111,11 @@ function json(body: unknown, status: number, headers: Headers): Response {
   return new Response(JSON.stringify(body), { status, headers })
 }
 
-async function handleStart(): Promise<Response> {
-  const state = generateState()
+async function handleStart(req: Request): Promise<Response> {
+  // Preview flags ride inside the state so they survive the Google round-trip
+  // and land back on the app via the callback redirect (CYJ-8 AC #4 fix).
+  const flags = new URL(req.url).searchParams.get('flags')
+  const state = encodeStateWithFlags(generateState(), flags)
   const headers = withCors(new Headers())
   headers.set(
     'Location',
@@ -223,7 +226,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ error: 'method not allowed' }, 405, withCors(new Headers()))
   }
 
-  if (path.endsWith('/google/start')) return handleStart()
+  if (path.endsWith('/google/start')) return handleStart(req)
   if (path.endsWith('/google/callback')) return handleGoogleCallback(req)
   if (path.endsWith('/me')) return handleMe(req)
   return json({ error: 'not found' }, 404, withCors(new Headers()))
