@@ -6,7 +6,6 @@ import { PlayerAvatar } from '../ui/PlayerAvatar'
 import { RoomSettings } from './RoomSettings'
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
 import { hasFlag } from '../flags'
-import { FUNCTIONS_URL } from '../config'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import './Lobby.css'
 
@@ -19,10 +18,13 @@ export default function Lobby() {
   const [searchParams] = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
   const [joinOpen, setJoinOpen] = useState(false)
-  // flag-cyj-7: consume the OAuth session (CYJ-8). Flag off / no session /
-  // any fetch failure leaves authUser null and the render identical to the
-  // mock — AC: no visible change to the default view.
-  const authEnabled = hasFlag('flag-cyj-7', searchParams) && Boolean(FUNCTIONS_URL)
+  // flag-cyj-7: consume the OAuth session (CYJ-8). The callback redirect
+  // carries the flags back to /lobby (embedded in the OAuth state at start),
+  // which is what makes this gate reachable end-to-end. Flag off / no
+  // session / any fetch failure leaves authUser null and the render
+  // identical to the mock — AC: no visible change to the default view.
+  // (The FUNCTIONS_URL check lives inside fetchCurrentUser — one home.)
+  const authEnabled = hasFlag('flag-cyj-7', searchParams)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   useEffect(() => {
     if (!authEnabled) return
@@ -67,7 +69,10 @@ export default function Lobby() {
       <div className="lobby-columns">
         <section className="lobby-actions" aria-label="Actions">
           <p className="lobby-greeting">
-            Hi, {displayName}! Ready to chain? 🔥 streak: {PROFILE.streak}
+            Hi, {displayName}! Ready to chain?
+            {/* Signed-in users get a real name; pairing it with the fixture
+                streak would show fabricated data, so the streak is mock-only. */}
+            {!authUser && ` 🔥 streak: ${PROFILE.streak}`}
           </p>
           <button
             type="button"

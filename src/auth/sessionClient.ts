@@ -16,13 +16,34 @@ export interface AuthUser {
  * Resolve the session cookie (httpOnly, set by the auth Edge Function) to the
  * signed-in user. Any failure — no session, expired, network down — resolves
  * to null so callers fall back to the mock identity.
+ *
+ * The "auth configured?" guard lives HERE (one home): a caller that forgets
+ * it would otherwise fetch `<undefined>/auth/me` and fail silently (rule 12).
  */
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
+  if (!FUNCTIONS_URL) return null
   try {
     const res = await fetch(`${FUNCTIONS_URL}/auth/me`, { credentials: 'include' })
     if (!res.ok) return null
     const body = await res.json()
-    return body?.user ?? null
+    const user = body?.user
+    if (!user) return null
+    return { ...user, avatar_url: httpsUrlOrNull(user.avatar_url) }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Avatar URLs originate from Google ID-token claims via the auth Edge
+ * Function (Google hosts them on *.googleusercontent.com over https). Accept
+ * only https: URLs so a weakened server path can never push an arbitrary
+ * scheme (javascript:, data:) into <img src>.
+ */
+function httpsUrlOrNull(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  try {
+    return new URL(value).protocol === 'https:' ? value : null
   } catch {
     return null
   }

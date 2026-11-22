@@ -35,6 +35,30 @@ export function generateState(): string {
   return randomUrlSafeToken(16)
 }
 
+/**
+ * Flag persistence: the OAuth round-trip strips the app's query string, so
+ * preview flags (pack §4) ride inside the anti-CSRF state as
+ * `<random>.<uri-encoded-flags>` — base64url randomness never contains '.',
+ * the state cookie holds the composite verbatim, Google echoes it back, and
+ * the callback re-attaches the flags to its redirect.
+ */
+export function encodeStateWithFlags(state: string, flags: string | null): string {
+  return flags ? `${state}.${encodeURIComponent(flags)}` : state
+}
+
+export function flagsFromState(state: string | null): string | null {
+  if (!state) return null
+  const dot = state.indexOf('.')
+  if (dot < 0) return null
+  const encoded = state.slice(dot + 1)
+  if (!encoded) return null
+  try {
+    return decodeURIComponent(encoded)
+  } catch {
+    return null
+  }
+}
+
 export interface UserUpsert {
   email: string
   display_name: string | null
@@ -68,13 +92,23 @@ export interface CallbackInput {
 export async function handleCallback(input: CallbackInput): Promise<CallbackDecision> {
   const base = input.appBaseUrl.replace(/\/+$/, '')
 
+  // Flags carried through the state (see encodeStateWithFlags) are echoed
+  // into every redirect so flag-gated behavior survives the round-trip.
+  const flags = flagsFromState(input.query.get('state'))
+  const appUrl = (path: string, extraQuery?: string): string => {
+    const qs = [extraQuery, flags ? `flags=${encodeURIComponent(flags)}` : '']
+      .filter(Boolean)
+      .join('&')
+    return `${base}${path}${qs ? `?${qs}` : ''}`
+  }
+
   // AC #4: Google sent an error (e.g. access_denied) — bounce back to the
   // login page with an indicator, never a session.
   const error = input.query.get('error')
   if (error) {
     return {
       status: 302,
-      redirect: `${base}/?auth_error=${encodeURIComponent(error)}`,
+      redirect: appUrl('/', `auth_error=${encodeURIComponent(error)}`),
       setCookies: [clearStateCookie()],
     }
   }
@@ -86,7 +120,7 @@ export async function handleCallback(input: CallbackInput): Promise<CallbackDeci
   if (!state || !input.stateCookie || state !== input.stateCookie) {
     return {
       status: 302,
-      redirect: `${base}/?auth_error=state_mismatch`,
+      redirect: appUrl('/', 'auth_error=state_mismatch'),
       setCookies: [clearStateCookie()],
     }
   }
@@ -97,7 +131,7 @@ export async function handleCallback(input: CallbackInput): Promise<CallbackDeci
   if (!claims || !claims.email) {
     return {
       status: 302,
-      redirect: `${base}/?auth_error=invalid_token`,
+      redirect: appUrl('/', 'auth_error=invalid_token'),
       setCookies: [clearStateCookie()],
     }
   }
@@ -107,7 +141,7 @@ export async function handleCallback(input: CallbackInput): Promise<CallbackDeci
   const token = generateSessionToken()
   return {
     status: 302,
-    redirect: `${base}/lobby`,
+    redirect: appUrl('/lobby'),
     setCookies: [serializeSessionCookie(token), clearStateCookie()],
     userUpsert: {
       email: claims.email,

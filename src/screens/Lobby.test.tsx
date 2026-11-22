@@ -41,6 +41,9 @@ afterEach(() => {
 })
 
 describe('Lobby session consumption (CYJ-8 AC #4)', () => {
+  // '/lobby?flags=flag-cyj-7' is exactly the URL the OAuth callback now
+  // redirects to — flow.ts embeds the flags in the state at /auth/google/
+  // start and echoes them back on success (asserted in flow.test.ts).
   it('with flag-cyj-7 and a valid session, greets the signed-in user and shows their avatar', async () => {
     vi.stubGlobal(
       'fetch',
@@ -48,6 +51,8 @@ describe('Lobby session consumption (CYJ-8 AC #4)', () => {
     )
     const container = await renderLobby('/lobby?flags=flag-cyj-7')
     expect(container.textContent).toContain(`Hi, ${USER.display_name}!`)
+    // a real name must not be paired with the fabricated fixture streak
+    expect(container.textContent).not.toContain('streak')
     const img = container.querySelector<HTMLImageElement>('.lobby-header img')
     expect(img?.getAttribute('src')).toBe(USER.avatar_url)
   })
@@ -57,6 +62,7 @@ describe('Lobby session consumption (CYJ-8 AC #4)', () => {
     vi.stubGlobal('fetch', spy)
     const container = await renderLobby('/lobby')
     expect(container.textContent).toContain(`Hi, ${PROFILE.name}!`)
+    expect(container.textContent).toContain(`streak: ${PROFILE.streak}`)
     expect(container.querySelector('.lobby-header img')).toBeNull()
     expect(spy).not.toHaveBeenCalled()
   })

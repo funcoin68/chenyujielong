@@ -44,8 +44,12 @@ export default function Landing() {
   const onSignIn = () => {
     // flag-cyj-7: real Google OAuth via the auth Edge Function. Flag off (or
     // functions URL not configured) keeps the mock navigate to the lobby.
+    // The flags query rides along to /auth/google/start, which embeds it in
+    // the OAuth state so it survives the round-trip back to /lobby.
     if (hasFlag('flag-cyj-7', searchParams) && FUNCTIONS_URL) {
-      window.location.assign(`${FUNCTIONS_URL}/auth/google/start`)
+      const flags = searchParams.get('flags')
+      const query = flags ? `?flags=${encodeURIComponent(flags)}` : ''
+      window.location.assign(`${FUNCTIONS_URL}/auth/google/start${query}`)
     } else {
       navigate('/lobby')
     }

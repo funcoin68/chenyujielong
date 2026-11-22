@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { buildAuthorizeUrl, generateState, handleCallback } from './flow'
+import {
+  buildAuthorizeUrl,
+  encodeStateWithFlags,
+  flagsFromState,
+  generateState,
+  handleCallback,
+} from './flow'
 import { SESSION_COOKIE, hashSessionToken } from './session'
 import type { GoogleClaims } from './googleIdToken'
 
@@ -44,6 +50,29 @@ describe('buildAuthorizeUrl', () => {
   })
 })
 
+describe('state flag persistence (CYJ-8 AC #4 fix)', () => {
+  it('round-trips flags through the composite state value', () => {
+    const state = encodeStateWithFlags('random-part', 'flag-cyj-7,flag-x')
+    expect(state).toBe('random-part.flag-cyj-7%2Cflag-x')
+    expect(flagsFromState(state)).toBe('flag-cyj-7,flag-x')
+  })
+
+  it('leaves the state bare when there are no flags', () => {
+    expect(encodeStateWithFlags('random-part', null)).toBe('random-part')
+    expect(flagsFromState('random-part')).toBeNull()
+  })
+
+  it('returns null for a trailing separator or malformed encoding', () => {
+    expect(flagsFromState('random-part.')).toBeNull()
+    expect(flagsFromState('random-part.%')).toBeNull()
+    expect(flagsFromState(null)).toBeNull()
+  })
+
+  it('base64url randomness never contains the . separator', () => {
+    expect(generateState()).toMatch(/^[A-Za-z0-9_-]+$/)
+  })
+})
+
 describe('handleCallback — Google error branch (AC #4)', () => {
   it('redirects to the login page with an error indicator and issues NO session', async () => {
     const decision = await handleCallback({
@@ -57,6 +86,18 @@ describe('handleCallback — Google error branch (AC #4)', () => {
     expect(sessionCookieValue(decision.setCookies)).toBeUndefined()
     expect(decision.session).toBeUndefined()
     expect(decision.userUpsert).toBeUndefined()
+  })
+
+  it('echoes the flags carried in state into the error redirect', async () => {
+    const state = encodeStateWithFlags('random-part', 'flag-cyj-7')
+    const decision = await handleCallback({
+      query: query({ error: 'access_denied', state }),
+      stateCookie: state,
+      claims: null,
+      appBaseUrl: APP,
+    })
+    expect(decision.status).toBe(302)
+    expect(decision.redirect).toBe(`${APP}/?auth_error=access_denied&flags=flag-cyj-7`)
   })
 })
 
@@ -148,5 +189,31 @@ describe('handleCallback — success (AC #1, AC #2)', () => {
     expect(decision.session).toBeDefined()
     expect(decision.session!.tokenHash).toBe(await hashSessionToken(token))
     expect(decision.session!.expiresAt.getTime()).toBeGreaterThan(Date.now())
+  })
+
+  // CYJ-8 AC #4 fix: this is the URL the real OAuth callback produces, and
+  // Lobby.test.tsx renders exactly it — the flag survives the round-trip.
+  it('echoes the flags carried in state into the lobby redirect', async () => {
+    const state = encodeStateWithFlags('random-part', 'flag-cyj-7')
+    const decision = await handleCallback({
+      query: query({ code: 'c', state }),
+      stateCookie: state,
+      claims: CLAIMS,
+      appBaseUrl: APP,
+    })
+    expect(decision.status).toBe(302)
+    expect(decision.redirect).toBe(`${APP}/lobby?flags=flag-cyj-7`)
+    expect(sessionCookieValue(decision.setCookies)).toBeDefined()
+  })
+
+  it('re-encodes flags so they cannot break out of the query string', async () => {
+    const state = encodeStateWithFlags('random-part', 'flag-a,flag-b')
+    const decision = await handleCallback({
+      query: query({ code: 'c', state }),
+      stateCookie: state,
+      claims: CLAIMS,
+      appBaseUrl: APP,
+    })
+    expect(decision.redirect).toBe(`${APP}/lobby?flags=flag-a%2Cflag-b`)
   })
 })
