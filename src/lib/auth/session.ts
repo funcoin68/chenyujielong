@@ -52,10 +52,12 @@ export function clearSessionCookie(): string {
   return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0`
 }
 
-// The state cookie round-trips via top-level navigations only (app -> Google
-// -> callback), so SameSite=Lax is sufficient and stricter.
+// The state cookie is set from the cross-site /auth/google/start fetch
+// response (CYJ-10), so it needs SameSite=None; Secure to be stored at all;
+// the top-level callback navigation then sends it (same third-party-cookie
+// limitation class as the session cookie above).
 export function serializeStateCookie(state: string): string {
-  return `${STATE_COOKIE}=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${STATE_MAX_AGE_SECONDS}`
+  return `${STATE_COOKIE}=${state}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${STATE_MAX_AGE_SECONDS}`
 }
 
 export function clearStateCookie(): string {
