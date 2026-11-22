@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ChainView } from '../ui/ChainView'
 import { IdiomTile } from '../ui/IdiomTile'
 import { Modal } from '../ui/Modal'
 import { DEMO_CHAIN, PLAYERS_BY_ID, ROOM } from '../mock/data'
+import { hasFlag } from '../flags'
+import { FUNCTIONS_URL } from '../config'
 import './Landing.css'
 
 /** Google "G" mark (multicolor), per Google's brand asset guidelines. */
@@ -33,8 +35,21 @@ function GoogleMark() {
 /** S1 — Landing / Sign-in. */
 export default function Landing() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [howToOpen, setHowToOpen] = useState(false)
   const signInRef = useRef<HTMLButtonElement>(null)
+  // AC #4: the OAuth callback bounces failures back here as ?auth_error=…
+  const authError = searchParams.get('auth_error')
+
+  const onSignIn = () => {
+    // flag-cyj-7: real Google OAuth via the auth Edge Function. Flag off (or
+    // functions URL not configured) keeps the mock navigate to the lobby.
+    if (hasFlag('flag-cyj-7', searchParams) && FUNCTIONS_URL) {
+      window.location.assign(`${FUNCTIONS_URL}/auth/google/start`)
+    } else {
+      navigate('/lobby')
+    }
+  }
 
   return (
     <main className="landing">
@@ -50,13 +65,14 @@ export default function Landing() {
         <h1 className="landing-wordmark">成语接龙</h1>
         <p className="landing-tagline">Chain idioms. Beat your friends.</p>
 
-        {/* Mock: no real SSO — sign-in routes straight to the lobby (see PR deviations) */}
-        <button
-          ref={signInRef}
-          type="button"
-          className="btn btn-lg landing-google"
-          onClick={() => navigate('/lobby')}
-        >
+        {authError && (
+          <p className="landing-auth-error" role="alert">
+            Sign-in failed ({authError}). Please try again.
+          </p>
+        )}
+
+        {/* flag-cyj-7: real Google OAuth; flag off keeps the mock lobby navigate */}
+        <button ref={signInRef} type="button" className="btn btn-lg landing-google" onClick={onSignIn}>
           <GoogleMark />
           Sign in with Google
         </button>

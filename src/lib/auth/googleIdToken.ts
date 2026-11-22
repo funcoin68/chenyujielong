@@ -17,6 +17,9 @@ export interface GoogleClaims {
 const GOOGLE_ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com'])
 const CLOCK_LEEWAY_SECONDS = 60
 
+/** Standard JsonWebKey plus the key id Google's JWKS carries. */
+export type GoogleJwk = JsonWebKey & { kid?: string }
+
 function b64urlDecode(part: string): Uint8Array {
   let b64 = part.replace(/-/g, '+').replace(/_/g, '/')
   const pad = b64.length % 4
@@ -37,7 +40,7 @@ function decodeJson(part: string): Record<string, unknown> | null {
 
 export async function verifyGoogleIdToken(
   idToken: string,
-  jwks: { keys: JsonWebKey[] },
+  jwks: { keys: GoogleJwk[] },
   clientId: string,
   nowSeconds: number = Math.floor(Date.now() / 1000),
 ): Promise<GoogleClaims | null> {

@@ -46,6 +46,13 @@
   color: var(--ink-secondary);
 }
 
+.landing-auth-error {
+  margin: 0;
+  color: var(--error-coral);
+  font-size: 14px;
+  text-align: center;
+}
+
 /* Google's brand-compliant neutral button (spec S1 safe rule) */
 .landing-google {
   background: #fff;
