@@ -6,6 +6,7 @@ import { Modal } from '../ui/Modal'
 import { DEMO_CHAIN, PLAYERS_BY_ID, ROOM } from '../mock/data'
 import { hasFlag } from '../flags'
 import { FUNCTIONS_URL } from '../config'
+import { buildAuthStartUrl } from '../auth/authStart'
 import './Landing.css'
 
 /** Google "G" mark (multicolor), per Google's brand asset guidelines. */
@@ -47,9 +48,7 @@ export default function Landing() {
     // The flags query rides along to /auth/google/start, which embeds it in
     // the OAuth state so it survives the round-trip back to /lobby.
     if (hasFlag('flag-cyj-7', searchParams) && FUNCTIONS_URL) {
-      const flags = searchParams.get('flags')
-      const query = flags ? `?flags=${encodeURIComponent(flags)}` : ''
-      window.location.assign(`${FUNCTIONS_URL}/auth/google/start${query}`)
+      window.location.assign(buildAuthStartUrl(FUNCTIONS_URL, searchParams.get('flags')))
     } else {
       navigate('/lobby')
     }
