@@ -1,0 +1,5 @@
+# These are public browser endpoints (OAuth start/callback carry no Supabase
+# JWT; /auth/me does its own session-cookie auth). Pinned explicitly so a
+# future gateway config change can't silently change this — same pattern as
+# validate-move/config.toml.
+verify_jwt = false

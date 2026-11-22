@@ -27,6 +27,12 @@ describe('mock-up routes render without errors (AC #3)', () => {
     expect(html).toContain('成语接龙')
   })
 
+  it('landing shows a visible error indicator after a failed Google callback (CYJ-7 AC #4)', () => {
+    const html = renderRoute('/?auth_error=access_denied')
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('access_denied')
+  })
+
   it('lobby shows the Quick Play primary action and fixture rooms', () => {
     const html = renderRoute('/lobby')
     expect(html).toContain('Quick Play')
