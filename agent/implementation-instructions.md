@@ -33,13 +33,25 @@ wrong back to the ticket. Never silently improvise around an approved plan.
   require the pack's migration convention to be followed exactly).
 
 ## Output contract
-End your run by ensuring:
-- All commits pushed to agent/{ticket}
-- PR description follows the PR template (scripts/open_pr.py builds it):
-  what/why, test evidence (paste test run summary), risk tier, affected
-  modules, flag name + rollout, link to proposal comment. Declare modules as
-  directory prefixes (trailing slash) when the unit is a directory — e.g.
-  `supabase/functions/validate-move/`, not just its index.ts — the scope guard
-  prefix-matches, and sibling files (config.toml, deno.json) belong to the unit.
-Then stop. Do NOT merge, do NOT touch the PR beyond opening it. Review is a
-different stage with different agents.
+End your run by writing the COMPLETE pull-request body to `/tmp/pr_body.md`
+(absolute path, OUTSIDE the repo — it must never be committed). Stage 5 opens
+the PR from that file; you have no GitHub token and cannot create or edit the
+PR yourself. The body must contain these sections:
+
+    ## What & why
+    ## Test evidence      <- paste the real test/lint run summary
+    ## Modules
+    modules: [comma, separated, paths]
+    ## Risk
+    ## Rollout
+
+The `modules:` line is parsed by the stage-6 scope guard, which hard-fails if
+it is missing, empty (`[]`), or if the diff touches any path it does not
+cover. Declare modules as directory prefixes (trailing slash) when the unit
+is a directory — e.g. `supabase/functions/validate-move/`, not just its
+index.ts — the guard prefix-matches, and sibling files (config.toml,
+deno.json) belong to the unit. Declare honestly: never shrink the list to
+sneak files past the guard, and never self-expand scope mid-task — if the
+plan forces you outside the declared modules, STOP, revert, and post the
+blocker to the ticket for a human.
+Then stop. Do NOT merge. Review is a different stage with different agents.

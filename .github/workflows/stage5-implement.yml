@@ -21,6 +21,12 @@
 # dumps the agent output + git state into the log, and exits green when empty.
 # Blast radius stays small: this step env holds only KIMI_CODE_API_KEY; pushes use the
 # branch-scoped AGENT_PUSH_TOKEN and the ruleset still blocks main.
+# v4.11 bug #41: the PR body now comes from the agent-written /tmp/pr_body.md
+# (--body-file). open_pr.py used to open every PR with placeholder 'modules: []',
+# and ci-pr-gates fires ~4s after 'opened' - the scope guard read the placeholder
+# and hard-failed (PR #6) before a human could paste the real body. open_pr.py now
+# validates a non-empty modules: line BEFORE opening: a missing declaration fails
+# stage 5 loudly here, not as a red CI run minutes later.
 name: stage5-implement
 on:
   workflow_dispatch:
@@ -146,5 +152,5 @@ jobs:
           # --force-with-lease: agent-owned branch; overwrites only if the remote
           # is exactly what we fetched (rebase path), never clobbers human work.
           git push --force-with-lease -u origin "agent/${{ inputs.ticket_key }}"
-          python scripts/open_pr.py --ticket "${{ inputs.ticket_key }}"             --base main --head "agent/${{ inputs.ticket_key }}"
+          python scripts/open_pr.py --ticket "${{ inputs.ticket_key }}"             --base main --head "agent/${{ inputs.ticket_key }}" --body-file /tmp/pr_body.md   # bug #41: agent-written body; placeholder modules:[] fails the scope guard on arrival
           python scripts/jira_transition.py "${{ inputs.ticket_key }}" "In review"             --comment "Implementation PR opened. Status: In review."
