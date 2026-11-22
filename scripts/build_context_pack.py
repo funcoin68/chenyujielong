@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Regenerate docs/agent/onboarding-pack.md for this repo.
+
+Composes:
+  TIER 0 (human-curated): docs/agent/pack-curated.md — mission, lifecycle,
+      data model, API contracts, conventions, gotchas, known debt.
+  TIER 1 (mechanical, this script): module map (tree), hotspots (git log
+      frequency, 90d), recent decisions (git log subjects, 90d).
+
+Runs nightly via .github/workflows/onboarding-pack.yml (opens a PR; a human
+merges — nothing enters agent memory without a human merge) or manually:
+    python scripts/build_context_pack.py [--check]
+--check: exit 1 if the pack is stale vs. a fresh generation (CI use).
+"""
+import datetime
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CURATED = ROOT / "docs/agent/pack-curated.md"
+OUT = ROOT / "docs/agent/onboarding-pack.md"
+WINDOW_DAYS = 90
+HOTSPOT_N = 15
+DECISIONS_N = 20
+# Pipeline-infrastructure files churn for reasons unrelated to app risk;
+# reported separately so app hotspots stay visible.
+INFRA_PREFIXES = (".github/workflows/", "scripts/", "agent/", "docs/agent/")
+IGNORE = {"package-lock.json", "__pycache__"}
+
+MODULE_DIRS = {
+    "src/lib": "Shared rule primitives (Deno Edge Function + Vitest both import)",
+    "src/screens": "Route-level screens (spec §3)",
+    "src/ui": "Reusable components (one CSS per component)",
+    "src/mock": "Fixture data — the entire current 'backend'",
+    "supabase/functions": "Edge Functions (Deno; transport-only, rules in src/lib)",
+    "scripts": "PIPELINE glue (stage 1-10) — not game code",
+    ".github/workflows": "PIPELINE workflows — human-owned, agents never edit",
+    "docs/agent": "Agent memory (this pack, CORRECTIONS.md)",
+    "agent": "Agent instruction prompts per stage",
+}
+
+
+def sh(cmd):
+    return subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=ROOT).stdout.strip()
+
+
+def curated_sections():
+    """Split pack-curated.md into {section_number: body} on '## N.' headers."""
+    text = CURATED.read_text()
+    parts = re.split(r"(?m)^## (\d+)\. ", text)
+    # parts[0] = preamble, then alternating (num, body). The title word(s)
+    # after "## N." stay on the body's first line — drop it; render() supplies
+    # the canonical headings.
+    out = {}
+    for num, body in zip(parts[1::2], parts[2::2]):
+        lines = body.strip().splitlines()
+        out[num] = "\n".join(lines[1:]).strip() if lines else ""
+    return out
+
+
+def module_map():
+    lines = []
+    for d, desc in MODULE_DIRS.items():
+        p = ROOT / d
+        if not p.exists():
+            continue
+        files = [f for f in p.rglob("*") if f.is_file() and "__pycache__" not in str(f)]
+        names = sorted(f.name for f in files)
+        shown = ", ".join(names[:8]) + (f" … (+{len(names) - 8})" if len(names) > 8 else "")
+        lines.append(f"- `{d}/` ({len(files)} files) — {desc}. {shown}")
+    root_files = sorted(
+        f.name for f in ROOT.iterdir()
+        if f.is_file() and f.name not in IGNORE and not f.name.startswith(".")
+    )
+    lines.append(f"- repo root — {', '.join(root_files)}")
+    return "\n".join(lines)
+
+
+def churn():
+    out = sh(f"git log --since='{WINDOW_DAYS} days ago' --name-only --pretty=format:")
+    counts = {}
+    for line in out.splitlines():
+        f = line.strip()
+        if not f or any(i in f for i in IGNORE):
+            continue
+        counts[f] = counts.get(f, 0) + 1
+    return sorted(counts.items(), key=lambda kv: -kv[1])
+
+
+def hotspots():
+    ranked = churn()
+    app = [(f, n) for f, n in ranked if not f.startswith(INFRA_PREFIXES)][:HOTSPOT_N]
+    infra = [(f, n) for f, n in ranked if f.startswith(INFRA_PREFIXES)][:5]
+    lines = ["App code (most-changed first, last "
+             f"{WINDOW_DAYS}d — high churn = review carefully, keep tests close):"]
+    lines += [f"- `{f}` — {n} commits" for f, n in app] or ["- (no app churn in window)"]
+    lines += ["", "Pipeline infrastructure (churn here = pipeline debugging, not app risk):"]
+    lines += [f"- `{f}` — {n} commits" for f, n in infra] or ["- (none)"]
+    lines += ["", "Ownership: single service `idiom-game` (repo-registry.yaml), "
+                  "owner funcoin68, risk tier 3. `.github/workflows/` is "
+                  "human-owned — workflow diffs from an agent are auto-reverted."]
+    return "\n".join(lines)
+
+
+def recent_decisions():
+    out = sh(f"git log --since='{WINDOW_DAYS} days ago' --pretty=format:'%ad|%s' "
+             "--date=short --no-merges")
+    rows = []
+    for line in out.splitlines():
+        if "|" not in line:
+            continue
+        date, subj = line.split("|", 1)
+        rows.append(f"- {date} — {subj}")
+        if len(rows) >= DECISIONS_N:
+            break
+    return "\n".join(rows) or "- (no commits in window)"
+
+
+def render(sections):
+    today = datetime.date.today().isoformat()
+    commit = sh("git rev-parse --short HEAD")
+    s = lambda n: sections.get(n, f"(MISSING from pack-curated.md — fill section {n})")
+    return f"""# Agent onboarding pack — chenyujielong
+<!-- GENERATED FILE — do not edit by hand. Narrative sections come from
+     docs/agent/pack-curated.md; mechanical sections from git. Regenerate:
+     python scripts/build_context_pack.py (nightly workflow opens the PR). -->
+<!-- source commit: {commit} · generated: {today} · pack owner: funcoin68 -->
+
+## 0. Mission
+{s('0')}
+
+## 1. Module map
+{module_map()}
+
+## 2. Request lifecycle
+{s('2')}
+
+## 3. Data model
+{s('3')}
+
+## 4. API / interface contracts
+{s('4')}
+
+## 5. Conventions
+{s('5')}
+
+## 6. Gotchas (highest-value section)
+{s('6')}
+
+## 7. Hotspots & ownership
+{hotspots()}
+
+## 8. Recent decisions (rolling, last {WINDOW_DAYS} days, from git log)
+{recent_decisions()}
+
+## 9. Open risks / known debt
+{s('9')}
+
+---
+## Verification
+Before claiming a task done, the agent must have run: `npm test -- --run` and
+`npm run lint` on its diff. Coverage gate input: `npm run coverage` (json-summary).
+Stale-pack warning: if this file is older than 14 days relative to repo HEAD,
+distrust section 8 and re-derive from git log.
+"""
+
+
+def main():
+    if not CURATED.exists():
+        raise SystemExit(f"FATAL: {CURATED} missing — it is the human-owned "
+                         "source of the narrative sections.")
+    new = render(curated_sections())
+    if "--check" in sys.argv:
+        old = OUT.read_text() if OUT.exists() else ""
+        if old != new:
+            print("onboarding-pack.md is stale — run build_context_pack.py")
+            raise SystemExit(1)
+        print("onboarding-pack.md is fresh")
+        return
+    OUT.write_text(new)
+    print(f"wrote {OUT} ({len(new)} chars)")
+
+
+if __name__ == "__main__":
+    main()

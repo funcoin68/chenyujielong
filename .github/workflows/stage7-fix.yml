@@ -36,10 +36,19 @@ jobs:
           git config user.name "pipeline-agent"
           git config user.email "pipeline-agent@users.noreply.github.com"
 
-      - name: "Assemble fix context: review comments ONLY (still clean-room)"
+      - name: "Assemble fix context: review comments + repo conventions"
         env:
           GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-        run: python scripts/fetch_review_comments.py --pr "${{ inputs.pr_number }}" > /tmp/context.md
+        run: |
+          python scripts/fetch_review_comments.py --pr "${{ inputs.pr_number }}" > /tmp/context.md
+          {
+            echo
+            echo "## Onboarding pack (repo conventions — reference ONLY, not scope)"
+            cat docs/agent/onboarding-pack.md
+            echo
+            echo "## CORRECTIONS.md (prior-engineer memory — rules you must not violate)"
+            cat docs/agent/CORRECTIONS.md
+          } >> /tmp/context.md
 
       - name: Fix (k3-256k — stage 7 is cheap-model-only by design)
         # Narrow scope (flagged comments only), tiny budget, rounds capped at 3.

@@ -23,7 +23,13 @@ def main():
     # staleness warning on the pack (PDF: 14 days)
     pack = "docs/agent/onboarding-pack.md"
     if os.path.exists(pack):
-        m = re.search(r"generated: ([0-9-]+)", open(pack).read())
+        pack_text = open(pack).read()
+        if "{repo_name}" in pack_text or re.search(r"^\{[a-z_]+\}$", pack_text, re.M):
+            parts.append("> WARNING: onboarding pack is an UNFILLED TEMPLATE — "
+                         "it contains placeholders, not knowledge. Run "
+                         "scripts/build_context_pack.py (nightly workflow keeps it fresh). "
+                         "Do NOT trust its section content.")
+        m = re.search(r"generated: ([0-9-]+)", pack_text)
         if m:
             age = (datetime.date.today() - datetime.date.fromisoformat(m.group(1))).days
             if age > 14:

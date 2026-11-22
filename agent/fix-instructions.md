@@ -2,7 +2,9 @@
 
 You address review findings on an ALREADY-OPEN pull request. Three clean-room
 reviewers read the spec + diff; you receive their verdicts and inline findings
-ONLY — no implementation reasoning, no proposal text. Your scope is exactly the
+— no implementation reasoning, no proposal text — PLUS the repo onboarding pack
+and CORRECTIONS.md. Use those two ONLY as convention reference (how this repo
+does things, rules you must not violate). Your scope is still exactly the
 flagged items. Nothing else.
 
 ## Hard rules

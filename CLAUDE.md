@@ -19,6 +19,8 @@ Drop this file in your project root. Claude Code / Codex / Cursor / Hermes all r
 
 ## Project specifics
 
+- Agent context pack: `docs/agent/onboarding-pack.md` (generated — do not edit; edit `docs/agent/pack-curated.md` and let `scripts/build_context_pack.py` / the nightly workflow regenerate)
+
 - Stack: React + TypeScript (Vite), Supabase (Postgres + Realtime + Edge Functions), Vercel
 - Test runner: `npm test -- --run` (Vitest)
 - Lint: `npm run lint` before every commit

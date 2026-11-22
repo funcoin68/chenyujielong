@@ -36,5 +36,15 @@ print("\n## Review packet (from stage 6)\n```json")
 print(json.dumps(packet, indent=2)); print("```")
 print("\n## Diff under review\n```diff")
 print(diff_text[:60000]); print("```")
-print("\nREMINDER: you receive NO implementation plan and NO author reasoning. "
-      "Judge the code as it is. End with your verdict block and comments JSON.")
+print("\n## Standards rubric (repo-owned rules — NOT author reasoning)")
+print("Apply these when judging the diff. If the diff violates a CORRECTIONS.md")
+print("entry, that is a finding even when no checklist item catches it.")
+for _p, _label in [("docs/agent/CORRECTIONS.md", "CORRECTIONS.md — prior-engineer memory"),
+                   ("CLAUDE.md", "CLAUDE.md — repo rules + project specifics")]:
+    if os.path.exists(_p):
+        print(f"\n### {_label}\n")
+        print(open(_p).read())
+
+print("\nREMINDER: the rubric above is the ONLY repo context you get. You receive "
+      "NO implementation plan and NO author reasoning. Judge the code as it is. "
+      "End with your verdict block and comments JSON.")
