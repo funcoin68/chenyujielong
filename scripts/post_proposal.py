@@ -7,23 +7,36 @@ import sys, os, re, json, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _pipeline_lib import jira, jira_adf, sha256_text, canon_text, _req
 
+def _load_fm(raw):
+    """Parse front matter from whatever shape the agent emitted. bug #16: agents
+    wrap fm in a ```yaml fence as often as bare ---. bug #39: agents also emit
+    the --- delimiters INSIDE the fence (and occasionally stray extra docs) —
+    yaml.safe_load demands exactly one document and ComposerErrors. Strip edge
+    delimiters, then merge any remaining mapping docs."""
+    import yaml
+    lines = raw.strip().splitlines()
+    while lines and lines[0].strip() == "---": lines.pop(0)
+    while lines and lines[-1].strip() == "---": lines.pop()
+    docs = [d for d in yaml.safe_load_all("\n".join(lines)) if isinstance(d, dict)]
+    fm = {}
+    for d in docs:
+        fm.update(d)
+    return fm
+
 def parse_proposal(text):
     m = re.search(r"---PROPOSAL-START---(.*?)---PROPOSAL-END---", text, re.S)
     if not m: raise SystemExit("FATAL: no PROPOSAL markers in agent output")
     body = m.group(1).strip()
     fm = {}
-    # bug #16: agents wrap front matter in a ```yaml fence about as often as they
-    # use bare --- delimiters (template says bare). Accept both.
     fence = re.match(r"```ya?ml\s*\n(.*?)\n```", body, re.S)
     bare = body.startswith("---")
     if fence or bare:
-        import yaml
         if fence:
-            fm = yaml.safe_load(fence.group(1)) or {}
+            fm = _load_fm(fence.group(1))
             body = body[fence.end():].strip()
         else:
             end = body.index("\n---", 3)
-            fm = yaml.safe_load(body[3:end]) or {}
+            fm = _load_fm(body[3:end])
             body = body[end+4:].strip()
     return fm, body
 
