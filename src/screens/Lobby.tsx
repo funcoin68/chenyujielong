@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CodeInput } from '../ui/CodeInput'
 import { Modal } from '../ui/Modal'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
 import { RoomSettings, type RoomSettingsValues } from './RoomSettings'
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
-import { hasFlag } from '../flags'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import { saveSessionToken } from '../auth/sessionToken'
 import { createRoom } from '../rooms/roomClient'
@@ -18,7 +17,6 @@ const ordinal = (n: number) => (n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3
 export default function Lobby() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [searchParams] = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
   const [joinOpen, setJoinOpen] = useState(false)
   // Consume the OAuth session (CYJ-8) on every mount — CYJ-16 retired the
@@ -56,9 +54,9 @@ export default function Lobby() {
   }, [])
   const displayName = authUser?.display_name ?? PROFILE.name
 
-  // flag-cyj-17: real create-room through the room-authority Edge Function.
-  // Flag off keeps the mock navigate below — zero network, identical render.
-  const roomsEnabled = hasFlag('flag-cyj-17', searchParams)
+  // CYJ-17: real create-room through the room-authority Edge Function. The
+  // backend is live, so the flag gate is retired (same rollout as CYJ-16) —
+  // this path is unconditional.
   const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const submitCreate = async (settings: RoomSettingsValues) => {
@@ -195,21 +193,15 @@ export default function Lobby() {
 
       {/* S3 — Create Room modal */}
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Create Room">
-        {roomsEnabled ? (
-          <>
-            {createError && (
-              <p className="lobby-create-error" role="alert">
-                {createError}
-              </p>
-            )}
-            <RoomSettings
-              submitLabel={creating ? 'Creating…' : 'Create Room'}
-              onSubmit={submitCreate}
-            />
-          </>
-        ) : (
-          <RoomSettings submitLabel="Create Room" onSubmit={() => navigate(`/room/${ROOM.id}`)} />
+        {createError && (
+          <p className="lobby-create-error" role="alert">
+            {createError}
+          </p>
         )}
+        <RoomSettings
+          submitLabel={creating ? 'Creating…' : 'Create Room'}
+          onSubmit={submitCreate}
+        />
       </Modal>
 
       {/* S4 — Join with Code modal */}

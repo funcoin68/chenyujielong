@@ -175,7 +175,9 @@ describe('Lobby session consumption (CYJ-8 AC #4)', () => {
 })
 
 describe('Lobby create room (CYJ-17)', () => {
-  const FLAGS = '/lobby?flags=flag-cyj-17'
+  // CYJ-17 review (round 1): the flag gate is retired — the real create-room
+  // path is unconditional, so these render the flagless /lobby route exactly
+  // as the OAuth callback produces it.
 
   // Dispatches by URL: /auth/me answers the CYJ-7 session fetch, the
   // create-room endpoint answers with the per-test handler.
@@ -193,7 +195,7 @@ describe('Lobby create room (CYJ-17)', () => {
     return { fetchMock, createCalls }
   }
 
-  it('flag on + 200: POSTs to room-authority/create-room and navigates to /room/:roomId', async () => {
+  it('200: POSTs to room-authority/create-room and navigates to /room/:roomId', async () => {
     const { createCalls } = stubFetch(() =>
       Promise.resolve(
         new Response(JSON.stringify({ roomId: 'r-new-1', code: 'AB23CD', alreadyExisted: false }), {
@@ -201,7 +203,7 @@ describe('Lobby create room (CYJ-17)', () => {
         }),
       ),
     )
-    const container = await renderLobbyWithRoutes(FLAGS)
+    const container = await renderLobbyWithRoutes('/lobby')
     await openCreateModalAndSubmit(container)
 
     expect(createCalls).toHaveLength(1)
@@ -220,7 +222,7 @@ describe('Lobby create room (CYJ-17)', () => {
         }),
       ),
     )
-    const container = await renderLobbyWithRoutes(FLAGS)
+    const container = await renderLobbyWithRoutes('/lobby')
     await openCreateModalAndSubmit(container)
     expect(container.querySelector('[data-testid="room-page"]')?.textContent).toBe(
       'ROOM PAGE r-existing',
@@ -232,7 +234,7 @@ describe('Lobby create room (CYJ-17)', () => {
     const { createCalls } = stubFetch(() =>
       Promise.resolve(new Response('{"error":"no session"}', { status: 401 })),
     )
-    const container = await renderLobbyWithRoutes(FLAGS)
+    const container = await renderLobbyWithRoutes('/lobby')
     await openCreateModalAndSubmit(container)
 
     const alert = container.querySelector('[role="alert"]')
@@ -244,7 +246,7 @@ describe('Lobby create room (CYJ-17)', () => {
 
   it('network rejection: shows a visible error and does not navigate', async () => {
     stubFetch(() => Promise.reject(new Error('connection refused')))
-    const container = await renderLobbyWithRoutes(FLAGS)
+    const container = await renderLobbyWithRoutes('/lobby')
     await openCreateModalAndSubmit(container)
 
     const alert = container.querySelector('[role="alert"]')

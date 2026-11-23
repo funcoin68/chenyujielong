@@ -6,12 +6,7 @@
 import { generateRoomCode } from '../../../src/lib/room/code.ts'
 import { createRoomDecision, parseCreateRoomBody } from '../../../src/lib/room/createRoom.ts'
 import type { RoomSettingsInput } from '../../../src/lib/room/createRoom.ts'
-import {
-  SESSION_COOKIE,
-  hashSessionToken,
-  isSessionExpired,
-  parseCookies,
-} from '../../../src/lib/auth/session.ts'
+import { resolveUserId } from '../../../src/lib/auth/session.ts'
 
 // AC: missing config must be a loud cold-start error, not a silent 500.
 const REQUIRED_ENV = ['APP_BASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']
@@ -90,21 +85,44 @@ async function insertRoom(
   return { row: ((await res.json()) as RoomRow[])?.[0] ?? null, conflict: false }
 }
 
-// Session resolution copied from auth/index.ts handleMe (CYJ-7): the raw
-// token lives in the httpOnly cookie; the DB stores its SHA-256 hash.
-async function resolveUserId(req: Request): Promise<string | null> {
-  const token = parseCookies(req.headers.get('cookie'))[SESSION_COOKIE]
-  if (!token) return null
-  const tokenHash = await hashSessionToken(token)
+// Session resolution (CYJ-7): the raw token lives in the httpOnly cookie;
+// the DB stores its SHA-256 hash. The token -> user logic itself lives in
+// the shared lib (src/lib/auth/session.ts resolveUserId) so the Edge
+// Functions can't drift on expiry/rotation semantics — this closure is the
+// PostgREST transport only.
+async function lookupSession(
+  tokenHash: string,
+): Promise<{ expires_at: string; user_id: string } | null> {
   const res = await rest(`/sessions?token_hash=eq.${tokenHash}&select=expires_at,user_id`)
   if (!res.ok) {
     console.error(`room-authority: session lookup failed: HTTP ${res.status}`)
     return null
   }
-  const row = ((await res.json()) as { expires_at: string; user_id: string }[])?.[0]
-  if (!row) return null
-  if (isSessionExpired(new Date(row.expires_at))) return null
-  return row.user_id
+  return ((await res.json()) as { expires_at: string; user_id: string }[])?.[0] ?? null
+}
+
+// CYJ-17 review (round 1, security): bound mass room creation. The
+// one-active-room partial unique index already caps abuse per user; this
+// in-memory sliding window caps insert churn per authenticated user so a
+// fleet of accounts can't flood the rooms table. Checked only on the
+// insert path — returning an existing active room (AC #2/#3) never
+// throttles. Per-isolate, so it bounds rather than hard-limits; a
+// platform-level limit is the eventual follow-up (the auth function has
+// none either — convention noted in the review reply).
+const CREATE_WINDOW_MS = 60_000
+const CREATE_MAX_PER_WINDOW = 5
+const createHits = new Map<string, number[]>()
+
+function createThrottled(userId: string, now = Date.now()): boolean {
+  const cutoff = now - CREATE_WINDOW_MS
+  const hits = (createHits.get(userId) ?? []).filter((t) => t > cutoff)
+  if (hits.length >= CREATE_MAX_PER_WINDOW) {
+    createHits.set(userId, hits)
+    return true
+  }
+  hits.push(now)
+  createHits.set(userId, hits)
+  return false
 }
 
 function withCors(headers: Headers): Headers {
@@ -121,6 +139,14 @@ function json(body: unknown, status: number, headers: Headers): Response {
 async function handleCreateRoom(req: Request): Promise<Response> {
   const headers = withCors(new Headers())
 
+  // Auth boundary first (AC #4): a session-less caller always gets 401 —
+  // regardless of body shape, so validation behavior never leaks to
+  // unauthenticated callers.
+  const userId = await resolveUserId(req.headers.get('cookie'), lookupSession)
+  if (userId === null) {
+    return json({ error: 'no session' }, 401, headers)
+  }
+
   let body: unknown
   try {
     body = await req.json()
@@ -132,14 +158,13 @@ async function handleCreateRoom(req: Request): Promise<Response> {
     return json({ error: parsed.reason }, 400, headers)
   }
 
-  const userId = await resolveUserId(req)
-  if (userId === null) {
-    return json({ error: 'no session' }, 401, headers)
-  }
-
   const existing = await selectActiveRoom(userId)
   if (existing) {
     return json(createRoomDecision({ userId, room: existing }).body, 200, headers)
+  }
+
+  if (createThrottled(userId)) {
+    return json({ error: 'too many rooms created, try again in a minute' }, 429, headers)
   }
 
   const inserted = await insertRoom(userId, parsed.settings)

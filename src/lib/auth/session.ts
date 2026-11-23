@@ -91,3 +91,29 @@ export function parseCookies(header: string | null): Record<string, string> {
   }
   return out
 }
+
+export interface SessionIdentity {
+  user_id: string
+  expires_at: string
+}
+
+/**
+ * CYJ-17 review (round 1): the one home for token -> user resolution. Both
+ * Edge Functions (auth handleMe, room-authority) used to carry their own
+ * copy of the token_hash -> sessions lookup, which would drift on
+ * expiry/rotation semantics. Transport-free: the caller injects the lookup
+ * (PostgREST in the Edge Functions, a stub in tests). Cookie-token first;
+ * null when the cookie, the row, or the unexpired session is missing —
+ * callers map null to their own 401 contract.
+ */
+export async function resolveUserId(
+  cookieHeader: string | null,
+  lookup: (tokenHash: string) => Promise<SessionIdentity | null>,
+): Promise<string | null> {
+  const token = parseCookies(cookieHeader)[SESSION_COOKIE]
+  if (!token) return null
+  const row = await lookup(await hashSessionToken(token))
+  if (!row) return null
+  if (isSessionExpired(new Date(row.expires_at))) return null
+  return row.user_id
+}
