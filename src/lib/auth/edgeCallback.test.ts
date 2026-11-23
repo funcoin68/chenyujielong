@@ -61,7 +61,7 @@ async function buildSignedIdToken(
   return `${signingInput}.${b64url(signature)}`
 }
 
-async function mockFetch(input: RequestInfo | URL, _init?: RequestInit): Promise<Response> {
+async function mockFetch(input: RequestInfo | URL): Promise<Response> {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   if (url === 'https://oauth2.googleapis.com/token') {
     exchangeCalls += 1
