@@ -149,8 +149,7 @@ async function selectRoomWithPlayers(
 ): Promise<{ ok: true; row: RoomWithPlayersRow | null } | { ok: false }> {
   const res = await rest(
     `/rooms?id=eq.${encodeURIComponent(roomId)}` +
-      '&select=id,code,name,status,owner_id,max_players,' +
-      'room_players(order=is_host.desc,joined_at.asc)(user_id,is_host,users(display_name,avatar_url))' +
+      '&select=id,code,name,status,owner_id,max_players,room_players(user_id,is_host,users(display_name,avatar_url))&room_players.order=is_host.desc,joined_at.asc' +
       '&limit=1',
   )
   if (!res.ok) {
