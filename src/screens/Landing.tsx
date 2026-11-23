@@ -7,6 +7,7 @@ import { DEMO_CHAIN, PLAYERS_BY_ID, ROOM } from '../mock/data'
 import { hasFlag } from '../flags'
 import { FUNCTIONS_URL } from '../config'
 import { navigateTo, startGoogleSignIn } from '../auth/authStart'
+import { saveOauthState } from '../auth/oauthState'
 import './Landing.css'
 
 /** Google "G" mark (multicolor), per Google's brand asset guidelines. */
@@ -53,7 +54,15 @@ export default function Landing() {
     if (hasFlag('flag-cyj-7', searchParams) && FUNCTIONS_URL) {
       setSignInFailed(false)
       try {
-        navigateTo(await startGoogleSignIn(FUNCTIONS_URL, searchParams.get('flags')))
+        const redirect = await startGoogleSignIn(FUNCTIONS_URL, searchParams.get('flags'))
+        // CYJ-14 AC #1: persist the OAuth state nonce to durable client
+        // storage BEFORE leaving for Google. The cross-site state cookie is
+        // blocked in some browsers; the /auth/callback route validates the
+        // echoed state against this value instead. The redirect URL is
+        // already https-validated inside startGoogleSignIn.
+        const state = new URL(redirect).searchParams.get('state')
+        if (state) saveOauthState(state)
+        navigateTo(redirect)
       } catch (err) {
         console.warn('onSignIn: auth start failed', err)
         setSignInFailed(true)

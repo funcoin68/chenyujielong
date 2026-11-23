@@ -23,19 +23,39 @@ vi.mock('../config', () => ({
 // jsdom's window.location.assign is non-configurable, so the component
 // navigates through navigateTo() — intercepted here. AC #4's behavior
 // assertion is WHERE the browser would navigate, not the DOM API used.
-const navCalls = vi.hoisted(() => ({ urls: [] as string[] }))
+const navCalls = vi.hoisted(() => ({ urls: [] as string[], storedStates: [] as (string | null)[] }))
 vi.mock('../auth/authStart', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../auth/authStart')>()),
   navigateTo: (url: string) => {
+    // Capture the durable-storage nonce at navigation time so tests can
+    // assert it was persisted BEFORE the browser left for Google (CYJ-14).
     navCalls.urls.push(url)
+    navCalls.storedStates.push(localStorage.getItem('cyj_oauth_state'))
   },
 }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
+// The vitest jsdom env here exposes no localStorage (opaque-origin window),
+// so tests stub a deterministic in-memory Storage (CYJ-14 assertions).
+function memoryStorage(): Storage {
+  const data = new Map<string, string>()
+  return {
+    get length() {
+      return data.size
+    },
+    clear: () => data.clear(),
+    getItem: (k) => data.get(k) ?? null,
+    key: (i) => [...data.keys()][i] ?? null,
+    removeItem: (k) => void data.delete(k),
+    setItem: (k, v) => void data.set(k, String(v)),
+  }
+}
+
 const roots: Root[] = []
 
 async function renderLanding(route: string): Promise<HTMLElement> {
+  vi.stubGlobal('localStorage', memoryStorage())
   const container = document.createElement('div')
   const root = createRoot(container)
   roots.push(root)
@@ -66,7 +86,30 @@ async function clickSignIn(container: HTMLElement) {
 afterEach(() => {
   for (const root of roots.splice(0)) root.unmount()
   navCalls.urls.length = 0
+  navCalls.storedStates.length = 0
   vi.unstubAllGlobals()
+})
+
+describe('Landing Google sign-in (CYJ-14 AC #1)', () => {
+  it('flag on: persists the OAuth state nonce to durable storage BEFORE navigating to Google', async () => {
+    const googleUrl =
+      'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&redirect_uri=https%3A%2F%2Fapp.example%2Fauth%2Fcallback&state=abc'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify({ redirect: googleUrl }), { status: 200 })),
+      ),
+    )
+    const container = await renderLanding('/?flags=flag-cyj-7')
+
+    await clickSignIn(container)
+
+    // AC #1: the nonce is in localStorage at the moment navigateTo fires,
+    // and it survives after — durable across the Google round-trip.
+    expect(navCalls.storedStates).toEqual(['abc'])
+    expect(localStorage.getItem('cyj_oauth_state')).toBe('abc')
+    expect(navCalls.urls).toEqual([googleUrl])
+  })
 })
 
 describe('Landing Google sign-in (CYJ-10 AC #4)', () => {

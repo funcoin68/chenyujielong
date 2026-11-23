@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom'
 import Landing from './screens/Landing'
+import AuthCallback from './screens/AuthCallback'
 import Lobby from './screens/Lobby'
 import WaitingRoom from './screens/WaitingRoom'
 import Gameplay from './screens/Gameplay'
@@ -11,6 +12,7 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/lobby" element={<Lobby />} />
       <Route path="/room/:roomId" element={<WaitingRoom />} />
       <Route path="/room/:roomId/play" element={<Gameplay />} />

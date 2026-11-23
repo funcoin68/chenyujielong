@@ -130,6 +130,64 @@ describe('handleCallback — state validation', () => {
   })
 })
 
+describe('handleCallback — client-stored state (CYJ-14)', () => {
+  // AC #2 (server hop): browsers that block the third-party state cookie
+  // send no cyj_oauth_state cookie; the client-verified `stored` value the
+  // app route supplies takes its place.
+  it('accepts a matching storedState with no state cookie and issues a session', async () => {
+    const decision = await handleCallback({
+      query: query({ code: 'c', state: 'st' }),
+      stateCookie: undefined,
+      storedState: 'st',
+      claims: CLAIMS,
+      appBaseUrl: APP,
+    })
+    expect(decision.status).toBe(302)
+    expect(decision.redirect).toBe(`${APP}/lobby`)
+    expect(decision.session).toBeDefined()
+    expect(sessionCookieValue(decision.setCookies)).toBeDefined()
+  })
+
+  it('rejects a mismatched storedState with no state cookie — no session', async () => {
+    const decision = await handleCallback({
+      query: query({ code: 'c', state: 'from-google' }),
+      stateCookie: undefined,
+      storedState: 'from-storage',
+      claims: CLAIMS,
+      appBaseUrl: APP,
+    })
+    expect(decision.status).toBe(302)
+    expect(decision.redirect).toBe(`${APP}/?auth_error=state_mismatch`)
+    expect(decision.session).toBeUndefined()
+  })
+
+  // Cookie-first precedence: when both channels arrive, the cookie is the
+  // expected value and the stored param cannot override a cookie mismatch.
+  it('cookie present wins over storedState when both are given', async () => {
+    const decision = await handleCallback({
+      query: query({ code: 'c', state: 'st' }),
+      stateCookie: 'st',
+      storedState: 'other',
+      claims: CLAIMS,
+      appBaseUrl: APP,
+    })
+    expect(decision.redirect).toBe(`${APP}/lobby`)
+    expect(decision.session).toBeDefined()
+  })
+
+  it('still mismatches when neither cookie nor storedState is present', async () => {
+    const decision = await handleCallback({
+      query: query({ code: 'c', state: 'st' }),
+      stateCookie: undefined,
+      storedState: undefined,
+      claims: CLAIMS,
+      appBaseUrl: APP,
+    })
+    expect(decision.redirect).toBe(`${APP}/?auth_error=state_mismatch`)
+    expect(decision.session).toBeUndefined()
+  })
+})
+
 describe('handleCallback — invalid ID token (AC #3)', () => {
   it('redirects to the app with auth_error and NO session cookie when token verification failed', async () => {
     const decision = await handleCallback({
