@@ -67,6 +67,11 @@ async function renderLobbyWithRoutes(route: string): Promise<HTMLElement> {
       </MemoryRouter>,
     )
   })
+  // CYJ-23: the active-room fetch chains off the session fetch on mount —
+  // flush the microtask queue so its state update lands inside act().
+  await act(async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+  })
   return container
 }
 
@@ -189,6 +194,12 @@ describe('Lobby create room (CYJ-17)', () => {
         createCalls.push({ url: urlString, init })
         return createRoomHandler(init)
       }
+      // CYJ-23: the Lobby now also reads the active room for a signed-in
+      // user — answer it with the normal empty state so the create-flow
+      // assertions stay about create-room.
+      if (urlString.endsWith('/room-authority/active-room')) {
+        return Promise.resolve(new Response('{"room":null}', { status: 200 }))
+      }
       return Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -253,5 +264,135 @@ describe('Lobby create room (CYJ-17)', () => {
     expect(alert?.textContent).toBeTruthy()
     expect(alert?.textContent).not.toContain('sign in')
     expect(container.querySelector('[data-testid="room-page"]')).toBeNull()
+  })
+})
+
+describe('Lobby active room (CYJ-23)', () => {
+  const ACTIVE_ROOM = { roomId: 'r-active', code: 'Q4W7EK', name: 'Chain gang', status: 'waiting' }
+
+  // Dispatches by URL like the CYJ-17 block: /auth/me answers the session
+  // fetch, /room-authority/active-room and close-room answer per-test.
+  function stubFetch(handlers: {
+    me?: () => Promise<Response>
+    activeRoom?: () => Promise<Response>
+    closeRoom?: (init?: RequestInit) => Promise<Response>
+  }) {
+    const closeCalls: { url: string; init?: RequestInit }[] = []
+    const fetchMock = vi.fn((url: string | URL, init?: RequestInit) => {
+      const urlString = String(url)
+      if (urlString.endsWith('/room-authority/close-room')) {
+        closeCalls.push({ url: urlString, init })
+        return (handlers.closeRoom ?? (() => Promise.resolve(new Response('{}', { status: 200 }))))(init)
+      }
+      if (urlString.endsWith('/room-authority/active-room')) {
+        return (handlers.activeRoom ?? (() =>
+          Promise.resolve(new Response(JSON.stringify({ room: ACTIVE_ROOM }), { status: 200 }))))()
+      }
+      return (handlers.me ?? (() =>
+        Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))))()
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return { fetchMock, closeCalls }
+  }
+
+  async function confirmClose(container: HTMLElement): Promise<void> {
+    await act(async () => {
+      findButton(container, 'Close room').click()
+    })
+    const dialog = container.querySelector('[role="dialog"]')
+    if (!dialog) throw new Error('close-room dialog not found')
+    await act(async () => {
+      findButton(dialog as HTMLElement, 'Close room').click()
+    })
+  }
+
+  it('shows the active room section with the code and navigates on Enter', async () => {
+    stubFetch({})
+    const container = await renderLobbyWithRoutes('/lobby')
+    const section = container.querySelector('[aria-labelledby="lobby-active-heading"]')
+    expect(section).not.toBeNull()
+    expect(section?.textContent).toContain(ACTIVE_ROOM.code)
+    expect(section?.textContent).not.toContain('No active room')
+
+    await act(async () => {
+      findButton(container, 'Enter').click()
+    })
+    expect(container.querySelector('[data-testid="room-page"]')?.textContent).toBe(
+      `ROOM PAGE ${ACTIVE_ROOM.roomId}`,
+    )
+  })
+
+  it('shows the empty state when the signed-in user has no active room', async () => {
+    stubFetch({ activeRoom: () => Promise.resolve(new Response('{"room":null}', { status: 200 })) })
+    const container = await renderLobbyWithRoutes('/lobby')
+    const section = container.querySelector('[aria-labelledby="lobby-active-heading"]')
+    expect(section?.textContent).toContain('No active room')
+  })
+
+  it('signed out: the section is absent and the create-room flow is unaffected', async () => {
+    const me = () => Promise.resolve(new Response('{"error":"no session"}', { status: 401 }))
+    stubFetch({ me })
+    const container = await renderLobbyWithRoutes('/lobby')
+    expect(container.querySelector('[aria-labelledby="lobby-active-heading"]')).toBeNull()
+
+    // create-room still works end to end from the signed-out view
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL) => {
+        const urlString = String(url)
+        if (urlString.endsWith('/room-authority/create-room')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ roomId: 'r-new-1', code: 'AB23CD', alreadyExisted: false }), {
+              status: 200,
+            }),
+          )
+        }
+        return me()
+      }),
+    )
+    await openCreateModalAndSubmit(container)
+    expect(container.querySelector('[data-testid="room-page"]')?.textContent).toBe('ROOM PAGE r-new-1')
+  })
+
+  it('close confirm: POSTs the roomId and the section falls back to the empty state', async () => {
+    const { closeCalls } = stubFetch({
+      closeRoom: () =>
+        Promise.resolve(new Response(JSON.stringify({ roomId: 'r-active', status: 'closed' }), { status: 200 })),
+    })
+    const container = await renderLobbyWithRoutes('/lobby')
+    await confirmClose(container)
+
+    expect(closeCalls).toHaveLength(1)
+    expect(JSON.parse(String(closeCalls[0].init?.body))).toEqual({ roomId: 'r-active' })
+    const section = container.querySelector('[aria-labelledby="lobby-active-heading"]')
+    expect(section?.textContent).toContain('No active room')
+    expect(section?.textContent).not.toContain(ACTIVE_ROOM.code)
+  })
+
+  it('close forbidden: shows an alert in the modal and the room row is still rendered', async () => {
+    stubFetch({
+      closeRoom: () =>
+        Promise.resolve(new Response('{"error":"not the room owner"}', { status: 403 })),
+    })
+    const container = await renderLobbyWithRoutes('/lobby')
+    await confirmClose(container)
+
+    const section = container.querySelector('[aria-labelledby="lobby-active-heading"]')
+    expect(section?.textContent).toContain(ACTIVE_ROOM.code)
+    // The error renders only inside the confirm modal — never duplicated in
+    // the section behind it.
+    expect(section?.querySelector('[role="alert"]')).toBeNull()
+    const dialog = container.querySelector('[role="dialog"]')
+    expect(dialog?.querySelector('[role="alert"]')?.textContent).toBeTruthy()
+  })
+
+  it('active-room read failure: surfaces an alert instead of a false empty state', async () => {
+    stubFetch({
+      activeRoom: () => Promise.resolve(new Response('{"error":"lookup failed"}', { status: 500 })),
+    })
+    const container = await renderLobbyWithRoutes('/lobby')
+    const section = container.querySelector('[aria-labelledby="lobby-active-heading"]')
+    expect(section?.textContent).not.toContain('No active room')
+    expect(section?.querySelector('[role="alert"]')?.textContent).toBeTruthy()
   })
 })
