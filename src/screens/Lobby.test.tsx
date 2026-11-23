@@ -113,12 +113,15 @@ describe('Lobby session consumption (CYJ-8 AC #4)', () => {
 
   // Review round: with the flag off the consume effect must not persist the
   // token — the flag's blast radius stays clean even if a fragment arrives.
-  it('with the flag off, never persists a cyj_session fragment', async () => {
+  // It MUST still strip the fragment: the "one-shot hand-off, not a
+  // bookmarkable credential" invariant holds unconditionally.
+  it('with the flag off, never persists a cyj_session fragment but still strips it', async () => {
     const spy = vi.fn()
     vi.stubGlobal('fetch', spy)
     const container = await renderLobby('/lobby#cyj_session=tok-from-callback')
     expect(localStorage.getItem(SESSION_TOKEN_KEY)).toBeNull()
     expect(spy).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="url-probe"]')?.textContent).not.toContain('cyj_session')
     expect(container.textContent).toContain(`Hi, ${PROFILE.name}!`)
   })
 })

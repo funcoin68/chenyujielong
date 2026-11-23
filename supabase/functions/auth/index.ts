@@ -6,12 +6,11 @@ import { verifyGoogleIdToken } from '../../../src/lib/auth/googleIdToken.ts'
 import { buildAuthorizeUrl, encodeStateWithFlags, generateState, handleCallback } from '../../../src/lib/auth/flow.ts'
 import type { UserUpsert } from '../../../src/lib/auth/flow.ts'
 import {
-  SESSION_COOKIE,
   STATE_COOKIE,
   clearSessionCookie,
   hashSessionToken,
   isSessionExpired,
-  parseCookies,
+  resolveSessionToken,
   serializeStateCookie,
 } from '../../../src/lib/auth/session.ts'
 
@@ -214,9 +213,7 @@ async function handleGoogleCallback(req: Request): Promise<Response> {
 // below is unchanged: no token → {"error":"no session"}, never a 500.
 async function handleMe(req: Request): Promise<Response> {
   const headers = withCors(new Headers())
-  const token =
-    parseCookies(req.headers.get('cookie'))[SESSION_COOKIE] ??
-    req.headers.get('x-cyj-session')
+  const token = resolveSessionToken(req.headers.get('cookie'), req.headers.get('x-cyj-session'))
   if (!token) return json({ error: 'no session' }, 401, headers)
 
   const tokenHash = await hashSessionToken(token)
