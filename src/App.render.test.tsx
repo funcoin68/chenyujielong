@@ -21,9 +21,11 @@ describe('mock-up routes render without errors (AC #3)', () => {
     expect(html).toContain('<main')
   })
 
-  it('landing shows the Google sign-in button as the primary action', () => {
+  // CYJ-19: server render never runs effects, so Landing's SSR output is the
+  // session-check loading state, not the signed-in/signed-out auth control.
+  it('landing shows the session-check loading indicator and wordmark', () => {
     const html = renderRoute('/')
-    expect(html).toContain('Sign in with Google')
+    expect(html).toContain('role="status"')
     expect(html).toContain('成语接龙')
   })
 

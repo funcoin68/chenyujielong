@@ -53,6 +53,19 @@
   text-align: center;
 }
 
+/* CYJ-19: session-aware auth block — loading indicator, then either the
+   welcome + Go to Lobby (signed in) or the Google control (signed out). */
+.landing-loading {
+  margin: 0;
+  color: var(--ink-secondary);
+}
+
+.landing-welcome {
+  margin: 0;
+  font-size: 18px;
+  text-align: center;
+}
+
 /* Google's brand-compliant neutral button (spec S1 safe rule) */
 .landing-google {
   background: #fff;
