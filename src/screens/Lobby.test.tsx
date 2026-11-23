@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-route
 import Lobby from './Lobby'
 import { PROFILE } from '../mock/data'
 import { SESSION_TOKEN_KEY } from '../auth/sessionToken'
+import { invalidateSessionCache } from '../auth/sessionClient'
 import { memoryStorage } from '../auth/memoryStorage'
 
 // The functions URL is baked at build time; tests provide one so the
@@ -115,7 +116,12 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-beforeEach(() => vi.stubGlobal('localStorage', memoryStorage()))
+beforeEach(() => {
+  vi.stubGlobal('localStorage', memoryStorage())
+  // CYJ-26: fetchCurrentUser caches per token — reset so a previous test's
+  // cache can't suppress this test's mount-time fetch.
+  invalidateSessionCache()
+})
 
 describe('Lobby session consumption (CYJ-8 AC #4)', () => {
   it('with a valid session, greets the signed-in user and shows their avatar', async () => {

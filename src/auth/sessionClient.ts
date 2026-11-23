@@ -13,6 +13,45 @@ export interface AuthUser {
   avatar_url: string | null
 }
 
+/** CYJ-26: module-level session cache, keyed on the stored token so an OAuth
+ * hand-off (token change) naturally misses. `user: null` entries are the
+ * definitive signed-out state (only ever written by a 401), never a cached
+ * transient failure. */
+interface SessionCache {
+  token: string | null
+  user: AuthUser | null
+}
+let cached: SessionCache | null = null
+// In-flight dedupe: concurrent mounts (Landing + Lobby pattern) share one
+// promise, so the whole navigation sequence costs one GET /auth/me. The
+// in-flight promise is token-keyed too (review round): a token change
+// mid-flight (OAuth hand-off saves a new token, signOutClient clears the old
+// one while a slow /me is pending) must not hand the caller the OLD token's
+// in-flight promise and its stale identity.
+let inflight: Promise<AuthUser | null> | null = null
+let inflightToken: string | null = null
+
+/** Test + sign-out hook: drop the cached session AND any in-flight request,
+ * so a later caller never inherits a dangling promise (a test that stubbed
+ * /auth/me with a never-settling response, or a sign-out racing a slow read).
+ * Dropping the reference is safe: results are written token-keyed, so a
+ * late-settling old request can only populate a cache entry that a token
+ * clear/sign-out has already made unreachable. */
+export function invalidateSessionCache(): void {
+  cached = null
+  inflight = null
+  inflightToken = null
+}
+
+/** CYJ-26: client-side sign-out — clear the stored token AND the cached /me
+ * lookup so the next navigation re-resolves from scratch (AC #3). There is no
+ * server-side revoke endpoint at the mock tier; clearing the client session
+ * matches the current behavior. */
+export function signOutClient(): void {
+  clearSessionToken()
+  invalidateSessionCache()
+}
+
 /**
  * Resolve the stored session token to the signed-in user. CYJ-15: the client
  * attaches the raw token as the x-cyj-session header because the HttpOnly
@@ -32,10 +71,40 @@ export interface AuthUser {
  *
  * The "auth configured?" guard lives HERE (one home): a caller that forgets
  * it would otherwise fetch `<undefined>/auth/me` and fail silently (rule 12).
+ *
+ * CYJ-26: sequential navigations reuse the token-keyed cache (one /me request
+ * per session, not one per screen mount); concurrent mounts share the
+ * in-flight promise. Caching rules (failures are never cached as success):
+ * a 200 with a user caches it; a 401 caches the definitive signed-out state
+ * (and clears the stored token, as before); network throws, non-ok non-401s
+ * and malformed 200s cache nothing — the next call retries so transient
+ * failures stay visible (rule 12).
  */
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
   if (!FUNCTIONS_URL) return null
   const token = readSessionToken()
+  if (inflight && inflightToken === token) return inflight
+  if (cached && cached.token === token) return cached.user
+  const promise = requestCurrentUser(token)
+  // Track a finally-wrapped copy for clearing, but hand callers the raw
+  // promise: requestCurrentUser never rejects, and this keeps the caller-
+  // visible resolution timing identical to the pre-cache implementation
+  // (screen-test act() flushes sit exactly at the microtask boundary). The
+  // `inflight === tracked` check stops a late-settling OLD request (dropped
+  // from `inflight` by invalidateSessionCache or superseded by a token change
+  // on the fast-path guard above) from nulling out a NEWER in-flight request.
+  const tracked = promise.finally(() => {
+    if (inflight === tracked) {
+      inflight = null
+      inflightToken = null
+    }
+  })
+  inflight = tracked
+  inflightToken = token
+  return promise
+}
+
+async function requestCurrentUser(token: string | null): Promise<AuthUser | null> {
   try {
     const res = await fetch(`${FUNCTIONS_URL}/auth/me`, {
       credentials: 'include',
@@ -44,7 +113,15 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
         ...(token ? { 'x-cyj-session': token } : {}),
       },
     })
-    if (res.status === 401) clearSessionToken()
+    if (res.status === 401) {
+      clearSessionToken()
+      // The 401 is the definitive signed-out state, not a transient failure:
+      // cache it so re-navigating while signed out doesn't refetch. Safe even
+      // though the token was just cleared — the key mismatch on the next read
+      // simply falls through to one clean signed-out fetch.
+      cached = { token, user: null }
+      return null
+    }
     if (!res.ok) return null
     const body = await res.json()
     const user = body?.user
@@ -52,7 +129,9 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
       console.warn('fetchCurrentUser: 200 response without a user payload')
       return null
     }
-    return { ...user, avatar_url: httpsUrlOrNull(user.avatar_url) }
+    const authUser = { ...user, avatar_url: httpsUrlOrNull(user.avatar_url) }
+    cached = { token, user: authUser }
+    return authUser
   } catch (err) {
     console.warn('fetchCurrentUser: session fetch failed', err)
     return null
