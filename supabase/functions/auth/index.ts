@@ -8,10 +8,8 @@ import type { UserUpsert } from '../../../src/lib/auth/flow.ts'
 import {
   STATE_COOKIE,
   clearSessionCookie,
-  hashSessionToken,
-  isSessionExpired,
   parseCookies,
-  resolveSessionToken,
+  resolveUserId,
   serializeStateCookie,
 } from '../../../src/lib/auth/session.ts'
 
@@ -204,34 +202,46 @@ async function handleGoogleCallback(req: Request): Promise<Response> {
   return new Response(null, { status: 302, headers })
 }
 
-// AC #5: resolve the session cookie to the user it belongs to.
+// AC #5: resolve the session to the user it belongs to.
 // CYJ-15: cookie-first, then the x-cyj-session header — browsers blocking
 // third-party cookies never send the cross-site cyj_session cookie, so the
 // client (which received the raw token on the success redirect, stored it,
 // and attaches it as this header) is the channel that works everywhere. The
 // cookie wins when both arrive (it is HttpOnly; the header value comes from
-// localStorage, which any same-origin script can read). The 401 contract
-// below is unchanged: no token → {"error":"no session"}, never a 500.
+// localStorage, which any same-origin script can read). CYJ-20: resolution
+// runs through the SAME shared resolveUserId as room-authority — this
+// closure is the PostgREST transport for the users(...) join only. The
+// contract is unchanged: no token/unknown token → {"error":"no session"},
+// expired → clear-cookie + {"error":"session expired"}, transport failure →
+// 500 "session lookup failed" (fail visibly, never demote to 401).
 async function handleMe(req: Request): Promise<Response> {
   const headers = withCors(new Headers())
-  const token = resolveSessionToken(req.headers.get('cookie'), req.headers.get('x-cyj-session'))
-  if (!token) return json({ error: 'no session' }, 401, headers)
-
-  const tokenHash = await hashSessionToken(token)
-  const res = await rest(
-    `/sessions?token_hash=eq.${tokenHash}&select=expires_at,users(id,email,display_name,avatar_url)`,
-  )
-  if (!res.ok) {
-    console.error(`auth: session lookup failed: HTTP ${res.status}`)
+  let session
+  try {
+    session = await resolveUserId(
+      req.headers.get('cookie'),
+      req.headers.get('x-cyj-session'),
+      async (tokenHash) => {
+        const res = await rest(
+          `/sessions?token_hash=eq.${tokenHash}&select=expires_at,users(id,email,display_name,avatar_url)`,
+        )
+        // A failed lookup is a transport failure, not an unknown session —
+        // throw so it maps to the 500 below instead of demoting to 401.
+        if (!res.ok) throw new Error(`auth: session lookup failed: HTTP ${res.status}`)
+        type MeRow = { expires_at: string; users: unknown }
+        return ((await res.json()) as MeRow[])?.[0] ?? null
+      },
+    )
+  } catch (err) {
+    console.error(err)
     return json({ error: 'session lookup failed' }, 500, headers)
   }
-  const row = (await res.json())?.[0]
-  if (!row) return json({ error: 'no session' }, 401, headers)
-  if (isSessionExpired(new Date(row.expires_at))) {
+  if (session.kind === 'no-session') return json({ error: 'no session' }, 401, headers)
+  if (session.kind === 'expired') {
     headers.append('Set-Cookie', clearSessionCookie())
     return json({ error: 'session expired' }, 401, headers)
   }
-  return json({ user: row.users }, 200, headers)
+  return json({ user: session.row.users }, 200, headers)
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {

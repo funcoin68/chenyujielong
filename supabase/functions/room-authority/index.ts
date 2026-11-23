@@ -141,11 +141,20 @@ async function handleCreateRoom(req: Request): Promise<Response> {
 
   // Auth boundary first (AC #4): a session-less caller always gets 401 —
   // regardless of body shape, so validation behavior never leaks to
-  // unauthenticated callers.
-  const userId = await resolveUserId(req.headers.get('cookie'), lookupSession)
-  if (userId === null) {
+  // unauthenticated callers. CYJ-20: the session resolves through the SAME
+  // shared path as /auth/me (src/lib/auth/session.ts resolveUserId) — cookie
+  // first, x-cyj-session header fallback — so browsers blocking third-party
+  // cookies authenticate here exactly as they do on /auth/me. Expired and
+  // unknown sessions both map to the CYJ-15 no-session body (AC #2).
+  const session = await resolveUserId(
+    req.headers.get('cookie'),
+    req.headers.get('x-cyj-session'),
+    lookupSession,
+  )
+  if (session.kind !== 'ok') {
     return json({ error: 'no session' }, 401, headers)
   }
+  const userId = session.row.user_id
 
   let body: unknown
   try {
@@ -192,7 +201,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const path = new URL(req.url).pathname
   if (req.method === 'OPTIONS') {
     const headers = withCors(new Headers())
-    headers.set('Access-Control-Allow-Headers', 'Content-Type, apikey')
+    // CYJ-20: x-cyj-session is a non-simple header on the client's
+    // cross-site create-room fetch — without this the browser preflight
+    // rejects it and the session never reaches the shared resolver (same
+    // allowance /auth/me already carries, auth/index.ts).
+    headers.set('Access-Control-Allow-Headers', 'Content-Type, apikey, x-cyj-session')
     headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS')
     return new Response(null, { status: 204, headers })
   }
