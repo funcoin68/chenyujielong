@@ -7,6 +7,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 BUDGET = 40000
 
+def flatten_adf(node):
+    """bug #43: Jira comment bodies are ADF, not plain text. Walk the tree and
+    return plain text, one newline per block node (paragraph, list item...)."""
+    BLOCK = ("paragraph", "heading", "listItem", "blockquote", "codeBlock")
+    if isinstance(node, list):
+        return "".join(flatten_adf(c) for c in node)
+    if not isinstance(node, dict):
+        return ""
+    if node.get("type") == "text":
+        return node.get("text", "")
+    if node.get("type") == "hardBreak":
+        return "\n"
+    inner = "".join(flatten_adf(c) for c in node.get("content", []))
+    return inner + "\n" if node.get("type") in BLOCK else inner
+
 def read(path, label):
     if not os.path.exists(path):
         return f"## {label}\n(not present in repo yet — first-run repo)\n"
@@ -49,7 +64,13 @@ def main():
     if with_qa and ticket.get("comments"):
         parts.append("## Q&A transcript since proposal")
         for c in ticket["comments"]:
-            parts.append(f"- **{c['author']}** ({c['created']}): comment {c['id']}")
+            # bug #43: fetch_ticket.py stores comment text under body_adf (ADF
+            # dict); the old line emitted only author/date/id, so the agent
+            # never saw the human's actual question.
+            body = flatten_adf(c.get("body_adf")).strip()
+            if not body:
+                continue  # empty / image-only comment: nothing to answer
+            parts.append(f"- **{c['author']}** ({c['created']}): {body}")
     out = "\n\n".join(parts)
     if len(out) > BUDGET:
         out = out[:BUDGET] + "\n\n[TRUNCATED at 40k-char pack budget — narrow the ticket scope]"
