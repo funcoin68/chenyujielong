@@ -11,6 +11,7 @@ import {
   serializeStateCookie,
   clearStateCookie,
   parseCookies,
+  resolveSessionToken,
 } from './session'
 
 describe('session tokens', () => {
@@ -65,8 +66,24 @@ describe('session cookies', () => {
   })
 })
 
-describe('session expiry (AC #5 lookup half)', () => {
-  it('expires 14 days from issuance', () => {
+describe('resolveSessionToken (CYJ-15: cookie ?? x-cyj-session fallback, AC #2/#3)', () => {
+  it('uses the x-cyj-session header when no cookie arrives', () => {
+    expect(resolveSessionToken(null, 'header-tok')).toBe('header-tok')
+    expect(resolveSessionToken('', 'header-tok')).toBe('header-tok')
+  })
+
+  it('prefers the cookie when both arrive', () => {
+    expect(resolveSessionToken(`${SESSION_COOKIE}=cookie-tok`, 'header-tok')).toBe('cookie-tok')
+  })
+
+  it('returns null when neither arrives — the Edge Function maps this to 401 {"error":"no session"}, never a 500', () => {
+    expect(resolveSessionToken(null, null)).toBeNull()
+    // A cookie header without the session cookie still falls through to the header.
+    expect(resolveSessionToken('other=1', null)).toBeNull()
+  })
+})
+
+describe('session expiry (AC #5 lookup half)', () => {  it('expires 14 days from issuance', () => {
     const now = new Date('2026-11-22T00:00:00Z')
     const expires = sessionExpiresAt(now)
     expect(expires.getTime() - now.getTime()).toBe(SESSION_MAX_AGE_SECONDS * 1000)

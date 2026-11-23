@@ -148,10 +148,20 @@ export async function handleCallback(input: CallbackInput): Promise<CallbackDeci
 
   // AC #1/#2: upsert keyed on email (PostgREST merge-duplicates reuses an
   // existing row, so returning users are not re-inserted) and issue a session.
+  // CYJ-15: the success redirect also carries the raw token as a
+  // #cyj_session URL FRAGMENT — never a query param. A GET query string
+  // would log the long-lived bearer token in hosting/CDN access logs, sit in
+  // the address bar/history, and leak via Referer; a fragment is delivered
+  // to the client with the same one-shot semantics but never sent to the
+  // server nor included in Referer. The HttpOnly cookie alone cannot
+  // authenticate cross-site /auth/me fetches for browsers that block
+  // third-party cookies, so the app needs a client-held copy to attach as
+  // the x-cyj-session header. Failure branches above never reach this line
+  // and issue no token.
   const token = generateSessionToken()
   return {
     status: 302,
-    redirect: appUrl('/lobby'),
+    redirect: `${appUrl('/lobby')}#cyj_session=${encodeURIComponent(token)}`,
     setCookies: [serializeSessionCookie(token), clearStateCookie()],
     userUpsert: {
       email: claims.email,
