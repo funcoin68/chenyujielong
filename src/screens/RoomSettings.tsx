@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { PROFILE } from '../mock/data'
 import './RoomSettings.css'
 
 export interface RoomSettingsValues {
@@ -14,6 +13,17 @@ export interface RoomSettingsValues {
 export interface RoomSettingsProps {
   submitLabel: string
   onSubmit: (settings: RoomSettingsValues) => void
+  /** CYJ-27: initial room name derived from the signed-in user. Empty/undefined
+   *  renders the field empty with its placeholder — never another user's name. */
+  defaultName?: string
+}
+
+/** CYJ-27: first whitespace-separated token + "'s room" ("Wei Chen" →
+ *  "Wei's room", "小明" → "小明's room"); empty/missing → '' (the placeholder
+ *  shows). */
+export function defaultRoomName(displayName: string | null | undefined): string {
+  const first = displayName?.trim().split(/\s+/)[0] ?? ''
+  return first ? `${first}'s room` : ''
 }
 
 const TIMER_OPTIONS = [15, 30, 60]
@@ -24,8 +34,8 @@ const PLAYER_COUNTS = [2, 3, 4, 5, 6]
  * always enabled (spec S3). Shared by the Lobby create modal and the
  * waiting-room host settings.
  */
-export function RoomSettings({ submitLabel, onSubmit }: RoomSettingsProps) {
-  const [name, setName] = useState(`${PROFILE.name}'s room`)
+export function RoomSettings({ submitLabel, onSubmit, defaultName }: RoomSettingsProps) {
+  const [name, setName] = useState(defaultName ?? '')
   const [rule, setRule] = useState<'strict' | 'homophone'>('strict')
   const [timer, setTimer] = useState(30)
   const [players, setPlayers] = useState(4)
@@ -46,6 +56,7 @@ export function RoomSettings({ submitLabel, onSubmit }: RoomSettingsProps) {
           className="room-settings-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          placeholder="Room name"
           maxLength={24}
         />
       </label>

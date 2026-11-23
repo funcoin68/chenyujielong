@@ -273,6 +273,91 @@ describe('Lobby create room (CYJ-17)', () => {
   })
 })
 
+describe('Lobby create-room name default (CYJ-27)', () => {
+  // Dispatches by URL like the CYJ-17 block, but with a per-test display_name.
+  function stubFetch(displayName: string | null) {
+    const createCalls: { url: string; init?: RequestInit }[] = []
+    const user = displayName === null ? null : { ...USER, display_name: displayName }
+    const fetchMock = vi.fn((url: string | URL, init?: RequestInit) => {
+      const urlString = String(url)
+      if (urlString.endsWith('/room-authority/create-room')) {
+        createCalls.push({ url: urlString, init })
+        return Promise.resolve(
+          new Response(JSON.stringify({ roomId: 'r-new-1', code: 'AB23CD', alreadyExisted: false }), {
+            status: 200,
+          }),
+        )
+      }
+      if (urlString.endsWith('/room-authority/active-room')) {
+        return Promise.resolve(new Response('{"room":null}', { status: 200 }))
+      }
+      return Promise.resolve(
+        new Response(user ? JSON.stringify({ user }) : '{"error":"no session"}', {
+          status: user ? 200 : 401,
+        }),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return { createCalls }
+  }
+
+  async function openCreateModal(container: HTMLElement): Promise<HTMLInputElement> {
+    await act(async () => {
+      findButton(container, 'Create Room').click()
+    })
+    const input = container.querySelector<HTMLInputElement>('input.room-settings-name')
+    if (!input) throw new Error('room-name input not found')
+    return input
+  }
+
+  // AC #1: multi-token display_name → first token + "'s room".
+  it('pre-fills "Wei\'s room" for display_name "Wei Chen"', async () => {
+    stubFetch('Wei Chen')
+    const container = await renderLobbyWithRoutes('/lobby')
+    const input = await openCreateModal(container)
+    expect(input.value).toBe("Wei's room")
+  })
+
+  // AC #2: a single token is its own first token.
+  it('pre-fills "小明\'s room" for single-token display_name "小明"', async () => {
+    stubFetch('小明')
+    const container = await renderLobbyWithRoutes('/lobby')
+    const input = await openCreateModal(container)
+    expect(input.value).toBe("小明's room")
+  })
+
+  // AC #3 (revised): empty/missing display_name → empty field, placeholder
+  // shows, and no other user's name leaks into the form.
+  it('empty display_name: renders empty with the "Room name" placeholder', async () => {
+    stubFetch('')
+    const container = await renderLobbyWithRoutes('/lobby')
+    const input = await openCreateModal(container)
+    expect(input.value).toBe('')
+    expect(input.getAttribute('placeholder')).toBe('Room name')
+    expect(container.querySelector('form.room-settings')?.textContent).not.toContain('Wei')
+  })
+
+  // AC #3/#4: signed-out → empty field, no hardcoded "Wei's room" anywhere.
+  it('signed out: renders empty and contains no "Wei\'s room" anywhere', async () => {
+    stubFetch(null)
+    const container = await renderLobbyWithRoutes('/lobby')
+    const input = await openCreateModal(container)
+    expect(input.value).toBe('')
+    expect(input.getAttribute('placeholder')).toBe('Room name')
+    expect(container.textContent).not.toContain("Wei's room")
+  })
+
+  // AC #5: the derived default passes through to the create-room call verbatim.
+  it('submits the pre-filled name unchanged to create-room', async () => {
+    const { createCalls } = stubFetch('Wei Chen')
+    const container = await renderLobbyWithRoutes('/lobby')
+    await openCreateModalAndSubmit(container)
+    expect(createCalls).toHaveLength(1)
+    const body = JSON.parse(String(createCalls[0].init?.body))
+    expect(body.name).toBe("Wei's room")
+  })
+})
+
 describe('Lobby active room (CYJ-23)', () => {
   const ACTIVE_ROOM = { roomId: 'r-active', code: 'Q4W7EK', name: 'Chain gang', status: 'waiting' }
 

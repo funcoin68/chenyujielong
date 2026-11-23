@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Modal } from '../ui/Modal'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
-import { RoomSettings } from './RoomSettings'
+import { RoomSettings, defaultRoomName } from './RoomSettings'
 import { QUICK_CHAT } from '../mock/data'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import { fetchRoom, type FetchRoomResult } from '../rooms/roomClient'
@@ -213,7 +213,11 @@ export default function WaitingRoom() {
 
       {/* Host settings reopen the S3 form (spec S5) */}
       <Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Room settings">
-        <RoomSettings submitLabel="Save settings" onSubmit={() => setSettingsOpen(false)} />
+        <RoomSettings
+          submitLabel="Save settings"
+          onSubmit={() => setSettingsOpen(false)}
+          defaultName={defaultRoomName(me?.display_name)}
+        />
       </Modal>
     </main>
   )
