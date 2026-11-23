@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ChainView } from '../ui/ChainView'
 import { IdiomTile } from '../ui/IdiomTile'
@@ -7,6 +7,7 @@ import { DEMO_CHAIN, PLAYERS_BY_ID, ROOM } from '../mock/data'
 import { FUNCTIONS_URL } from '../config'
 import { navigateTo, startGoogleSignIn } from '../auth/authStart'
 import { saveOauthState } from '../auth/oauthState'
+import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import './Landing.css'
 
 /** Google "G" mark (multicolor), per Google's brand asset guidelines. */
@@ -42,6 +43,29 @@ export default function Landing() {
   const signInRef = useRef<HTMLButtonElement>(null)
   // AC #4: the OAuth callback bounces failures back here as ?auth_error=…
   const authError = searchParams.get('auth_error')
+
+  // CYJ-19: Landing is session-aware. One fetchCurrentUser on mount drives a
+  // three-state machine: in-flight → loading indicator only; valid session →
+  // welcome + Go to Lobby (the sign-in control is gone); no session or any
+  // failure → exactly the CYJ-16 signed-out rendering. The FUNCTIONS_URL
+  // guard lives inside fetchCurrentUser (one home), so unconfigured local
+  // dev resolves to signed-out with zero network calls. Same cancelled-flag
+  // effect pattern as Lobby.tsx.
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  const [sessionStatus, setSessionStatus] = useState<'loading' | 'signed-out' | 'signed-in'>(
+    'loading',
+  )
+  useEffect(() => {
+    let cancelled = false
+    fetchCurrentUser().then((user) => {
+      if (cancelled) return
+      setAuthUser(user)
+      setSessionStatus(user ? 'signed-in' : 'signed-out')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const onSignIn = async () => {
     // Real Google OAuth via the auth Edge Function (CYJ-16: no longer
@@ -103,10 +127,29 @@ export default function Landing() {
           </p>
         )}
 
-        <button ref={signInRef} type="button" className="btn btn-lg landing-google" onClick={onSignIn}>
-          <GoogleMark />
-          Sign in with Google
-        </button>
+        {sessionStatus === 'loading' ? (
+          <p className="landing-loading" role="status">
+            Loading…
+          </p>
+        ) : sessionStatus === 'signed-in' && authUser ? (
+          <>
+            <p className="landing-welcome">
+              Welcome back {authUser.display_name ?? authUser.email}
+            </p>
+            <button
+              type="button"
+              className="btn btn-primary btn-lg"
+              onClick={() => navigate('/lobby')}
+            >
+              Go to Lobby
+            </button>
+          </>
+        ) : (
+          <button ref={signInRef} type="button" className="btn btn-lg landing-google" onClick={onSignIn}>
+            <GoogleMark />
+            Sign in with Google
+          </button>
+        )}
 
         <button type="button" className="btn btn-text" onClick={() => setHowToOpen(true)}>
           How to play · 怎么玩

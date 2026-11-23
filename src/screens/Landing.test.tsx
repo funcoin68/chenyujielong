@@ -42,8 +42,37 @@ vi.mock('../auth/authStart', async (importOriginal) => ({
 // so tests stub a deterministic in-memory Storage (shared helper).
 const roots: Root[] = []
 
+// CYJ-19: Landing mounts a session check (fetchCurrentUser → GET /auth/me),
+// so every mount fires a fetch. Tests that care about fetch responses stub
+// it themselves BEFORE renderLanding — the .mock check below leaves those
+// untouched. Everything else gets a URL-routed default: /auth/me → 401
+// "no session" (the signed-out state), any other URL → 401 unauthorized
+// (preserves the pre-CYJ-19 behavior of the signed-out-path tests).
+function defaultFetchStub() {
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.endsWith('/auth/me')) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: 'no session' }), { status: 401 }),
+      )
+    }
+    return Promise.resolve(
+      new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }),
+    )
+  })
+}
+
+async function flushMicrotasks() {
+  await act(async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+  })
+}
+
 async function renderLanding(route: string): Promise<HTMLElement> {
   vi.stubGlobal('localStorage', memoryStorage())
+  if (!(globalThis.fetch as unknown as { mock?: unknown }).mock) {
+    vi.stubGlobal('fetch', defaultFetchStub())
+  }
   const container = document.createElement('div')
   const root = createRoot(container)
   roots.push(root)
@@ -168,6 +197,102 @@ describe('Landing with removed flag-cyj-7 (CYJ-16 AC #3)', () => {
   })
 })
 
+describe('Landing session check (CYJ-19)', () => {
+  const sessionUser = {
+    id: 'u1',
+    email: 'janedoe@example.com',
+    display_name: 'Jane Doe',
+    avatar_url: null,
+  }
+
+  function sessionFetchStub(user: Record<string, unknown> | null, status = 200) {
+    return vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/auth/me')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(user ? { user } : { error: 'no session' }), { status }),
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }),
+      )
+    })
+  }
+
+  // AC #1: valid session → welcome text from the session response, a "Go to
+  // Lobby" button, and the Google sign-in control gone.
+  it('/auth/me 200 with user renders "Welcome back <display_name>", Go to Lobby, and no sign-in button', async () => {
+    vi.stubGlobal('fetch', sessionFetchStub(sessionUser))
+    const container = await renderLanding('/')
+    await flushMicrotasks()
+
+    expect(container.textContent).toContain('Welcome back Jane Doe')
+    const buttons = Array.from(container.querySelectorAll('button'))
+    expect(buttons.some((b) => b.textContent?.trim() === 'Go to Lobby')).toBe(true)
+    expect(container.querySelector('.landing-google')).toBeNull()
+  })
+
+  // AC #2: Go to Lobby navigates client-side — the router renders the lobby
+  // route in place, and navigateTo (full-page navigation) never fires.
+  it('clicking "Go to Lobby" router-navigates to /lobby with no full page reload', async () => {
+    vi.stubGlobal('fetch', sessionFetchStub(sessionUser))
+    const container = await renderLanding('/')
+    await flushMicrotasks()
+
+    const goToLobby = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Go to Lobby',
+    )
+    expect(goToLobby).toBeDefined()
+    await act(async () => {
+      goToLobby!.click()
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('lobby-destination')
+    expect(navCalls.urls).toEqual([])
+  })
+
+  // AC #3: no session → exactly the CYJ-16 signed-out rendering.
+  it('/auth/me 401 renders the Google sign-in button with no welcome text or lobby button', async () => {
+    vi.stubGlobal('fetch', sessionFetchStub(null, 401))
+    const container = await renderLanding('/')
+    await flushMicrotasks()
+
+    expect(container.querySelector('.landing-google')?.textContent).toContain('Sign in with Google')
+    expect(container.textContent).not.toContain('Welcome back')
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (b) => b.textContent?.trim() === 'Go to Lobby',
+      ),
+    ).toBe(false)
+  })
+
+  // AC #4: in-flight session check → loading indicator only, neither the
+  // sign-in control nor the welcome/lobby UI.
+  it('/auth/me in-flight renders a role="status" indicator and neither auth control', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        if (String(input).endsWith('/auth/me')) return new Promise<Response>(() => {})
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }),
+        )
+      }),
+    )
+    const container = await renderLanding('/')
+    await flushMicrotasks()
+
+    expect(container.querySelector('[role="status"]')).not.toBeNull()
+    expect(container.querySelector('.landing-google')).toBeNull()
+    expect(container.textContent).not.toContain('Welcome back')
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (b) => b.textContent?.trim() === 'Go to Lobby',
+      ),
+    ).toBe(false)
+  })
+})
+
 describe('Landing Google sign-in (CYJ-10 AC #4)', () => {
   it('clicking sign-in calls the start endpoint programmatically and navigates to the redirect it returns', async () => {
     const googleUrl = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&state=abc'
@@ -179,9 +304,13 @@ describe('Landing Google sign-in (CYJ-10 AC #4)', () => {
 
     await clickSignIn(container)
 
-    // the start endpoint was hit via fetch — not via top-level navigation
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
-    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
+    // CYJ-19: the mount also fires the /auth/me session check, so assert on
+    // the start-endpoint call specifically, not the raw global count.
+    const startCalls = fetchSpy.mock.calls.filter(([url]) =>
+      String(url).includes('/auth/google/start'),
+    )
+    expect(startCalls).toHaveLength(1)
+    const [url, init] = startCalls[0] as unknown as [string, RequestInit]
     // CYJ-16: no flags in the URL → none appended to the start request
     expect(url).toBe('https://fn.example/auth/google/start')
     expect((init.headers as Record<string, string>).apikey).toBe('anon-key-123')
