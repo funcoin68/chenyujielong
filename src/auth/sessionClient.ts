@@ -26,13 +26,15 @@ let cached: SessionCache | null = null
 // promise, so the whole navigation sequence costs one GET /auth/me.
 let inflight: Promise<AuthUser | null> | null = null
 
-/** Test + sign-out hook: drop the cached session. Deliberately does NOT clear
- * `inflight` — a sign-out can't race an in-flight request in practice (the
- * button is on Profile, which fires no /me), and even if it did, the in-flight
- * result would be cached under the old token, so the token key mismatches on
- * the next read and the stale entry is unreachable. */
+/** Test + sign-out hook: drop the cached session AND any in-flight request,
+ * so a later caller never inherits a dangling promise (a test that stubbed
+ * /auth/me with a never-settling response, or a sign-out racing a slow read).
+ * Dropping the reference is safe: results are written token-keyed, so a
+ * late-settling old request can only populate a cache entry that a token
+ * clear/sign-out has already made unreachable. */
 export function invalidateSessionCache(): void {
   cached = null
+  inflight = null
 }
 
 /** CYJ-26: client-side sign-out — clear the stored token AND the cached /me
@@ -77,10 +79,18 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
   const token = readSessionToken()
   if (inflight) return inflight
   if (cached && cached.token === token) return cached.user
-  inflight = requestCurrentUser(token).finally(() => {
-    inflight = null
+  const promise = requestCurrentUser(token)
+  // Track a finally-wrapped copy for clearing, but hand callers the raw
+  // promise: requestCurrentUser never rejects, and this keeps the caller-
+  // visible resolution timing identical to the pre-cache implementation
+  // (screen-test act() flushes sit exactly at the microtask boundary). The
+  // identity guard stops a late-settling OLD request (dropped from `inflight`
+  // by invalidateSessionCache) from nulling out a NEWER in-flight request.
+  const tracked = promise.finally(() => {
+    if (inflight === tracked) inflight = null
   })
-  return inflight
+  inflight = tracked
+  return promise
 }
 
 async function requestCurrentUser(token: string | null): Promise<AuthUser | null> {
