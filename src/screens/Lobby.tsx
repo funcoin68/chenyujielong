@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { CodeInput } from '../ui/CodeInput'
 import { Modal } from '../ui/Modal'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
 import { RoomSettings } from './RoomSettings'
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
-import { hasFlag } from '../flags'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import './Lobby.css'
 
@@ -15,19 +14,15 @@ const ordinal = (n: number) => (n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3
 /** S2 — Lobby (Home). */
 export default function Lobby() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
   const [joinOpen, setJoinOpen] = useState(false)
-  // flag-cyj-7: consume the OAuth session (CYJ-8). The callback redirect
-  // carries the flags back to /lobby (embedded in the OAuth state at start),
-  // which is what makes this gate reachable end-to-end. Flag off / no
-  // session / any fetch failure leaves authUser null and the render
-  // identical to the mock — AC: no visible change to the default view.
+  // Consume the OAuth session (CYJ-8) on every mount — CYJ-16 retired the
+  // flag-cyj-7 gate, and the OAuth callback redirects to /lobby with no flags
+  // in the URL. No session / any fetch failure leaves authUser null and the
+  // render identical to the mock — AC: no visible change to the default view.
   // (The FUNCTIONS_URL check lives inside fetchCurrentUser — one home.)
-  const authEnabled = hasFlag('flag-cyj-7', searchParams)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   useEffect(() => {
-    if (!authEnabled) return
     let cancelled = false
     fetchCurrentUser().then((user) => {
       if (!cancelled) setAuthUser(user)
@@ -35,7 +30,7 @@ export default function Lobby() {
     return () => {
       cancelled = true
     }
-  }, [authEnabled])
+  }, [])
   const displayName = authUser?.display_name ?? PROFILE.name
 
   return (
