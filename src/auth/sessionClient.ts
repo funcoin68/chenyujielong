@@ -23,8 +23,13 @@ interface SessionCache {
 }
 let cached: SessionCache | null = null
 // In-flight dedupe: concurrent mounts (Landing + Lobby pattern) share one
-// promise, so the whole navigation sequence costs one GET /auth/me.
+// promise, so the whole navigation sequence costs one GET /auth/me. The
+// in-flight promise is token-keyed too (review round): a token change
+// mid-flight (OAuth hand-off saves a new token, signOutClient clears the old
+// one while a slow /me is pending) must not hand the caller the OLD token's
+// in-flight promise and its stale identity.
 let inflight: Promise<AuthUser | null> | null = null
+let inflightToken: string | null = null
 
 /** Test + sign-out hook: drop the cached session AND any in-flight request,
  * so a later caller never inherits a dangling promise (a test that stubbed
@@ -35,6 +40,7 @@ let inflight: Promise<AuthUser | null> | null = null
 export function invalidateSessionCache(): void {
   cached = null
   inflight = null
+  inflightToken = null
 }
 
 /** CYJ-26: client-side sign-out — clear the stored token AND the cached /me
@@ -77,19 +83,24 @@ export function signOutClient(): void {
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
   if (!FUNCTIONS_URL) return null
   const token = readSessionToken()
-  if (inflight) return inflight
+  if (inflight && inflightToken === token) return inflight
   if (cached && cached.token === token) return cached.user
   const promise = requestCurrentUser(token)
   // Track a finally-wrapped copy for clearing, but hand callers the raw
   // promise: requestCurrentUser never rejects, and this keeps the caller-
   // visible resolution timing identical to the pre-cache implementation
   // (screen-test act() flushes sit exactly at the microtask boundary). The
-  // identity guard stops a late-settling OLD request (dropped from `inflight`
-  // by invalidateSessionCache) from nulling out a NEWER in-flight request.
+  // `inflight === tracked` check stops a late-settling OLD request (dropped
+  // from `inflight` by invalidateSessionCache or superseded by a token change
+  // on the fast-path guard above) from nulling out a NEWER in-flight request.
   const tracked = promise.finally(() => {
-    if (inflight === tracked) inflight = null
+    if (inflight === tracked) {
+      inflight = null
+      inflightToken = null
+    }
   })
   inflight = tracked
+  inflightToken = token
   return promise
 }
 

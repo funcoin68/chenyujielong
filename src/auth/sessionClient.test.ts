@@ -198,6 +198,37 @@ describe('fetchCurrentUser — session cache (CYJ-26)', () => {
     expect(meCalls).toHaveLength(2)
   })
 
+  it('a token change while a request is in-flight starts a fresh fetch for the new token — never the stale in-flight promise', async () => {
+    const USER_B = { ...USER, id: 'u-2', email: 'other@example.com' }
+    let call = 0
+    let resolveFirst!: (res: Response) => void
+    let resolveSecond!: (res: Response) => void
+    const spy = mockFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          call += 1
+          if (call === 1) resolveFirst = resolve
+          else resolveSecond = resolve
+        }),
+    )
+    saveSessionToken('tok-old')
+    const stale = fetchCurrentUser()
+    saveSessionToken('tok-new')
+    const fresh = fetchCurrentUser()
+    expect(spy).toHaveBeenCalledTimes(2)
+    const [, secondInit] = spy.mock.calls[1] as unknown as [string, RequestInit]
+    expect(new Headers(secondInit.headers).get('x-cyj-session')).toBe('tok-new')
+    // The old request settling late only writes a cache entry keyed on
+    // tok-old; the new token's identity is never cross-contaminated.
+    resolveFirst(new Response(JSON.stringify({ user: USER }), { status: 200 }))
+    resolveSecond(new Response(JSON.stringify({ user: USER_B }), { status: 200 }))
+    expect(await stale).toEqual(USER)
+    expect(await fresh).toEqual(USER_B)
+    // The cache holds the new token's identity: no third fetch.
+    expect(await fetchCurrentUser()).toEqual(USER_B)
+    expect(spy).toHaveBeenCalledTimes(2)
+  })
+
   it('AC #4: a 401 clears the cached session, propagates null, and the next call refetches', async () => {
     saveSessionToken('tok-expired')
     const spy = mockFetch(() =>
