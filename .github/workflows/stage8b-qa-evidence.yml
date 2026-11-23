@@ -1,3 +1,6 @@
+env:
+  CLAUDE_CODE_EFFORT_LEVEL: high
+
 # .github/workflows/stage8b-qa-evidence.yml — QA evidence bundle before gate 2
 # Dispatched by maybe_aggregate.py on consensus. Deploys the PR to staging behind
 # its flag, verifies AC by AC, attaches ONE evidence permalink to the digest.
@@ -10,7 +13,7 @@
 # capture the REAL preview URL from CLI output (was: fabricated URL_BASE/pr-N).
 # Precondition step fails loudly naming missing secrets/vars. Smoke now has a
 # REAL default (curl the preview root) and reads $ENV_URL from the environment.
-# v4.1 fixes: deploy job declares outputs; Kimi Code endpoint + k3-256k pinned.
+# v4.1 fixes: deploy job declares outputs; Kimi Code endpoint + kimi-for-coding pinned.
 name: stage8b-qa-evidence
 on:
   workflow_dispatch:
@@ -86,7 +89,7 @@ jobs:
         run: npm ci
       - run: npm i -g "@anthropic-ai/claude-code@${{ vars.CLAUDE_CODE_VERSION || 'latest' }}"   # bug #33: set repo var CLAUDE_CODE_VERSION to freeze after validating a version
 
-      - name: AC-by-AC verification (k3-256k QA agent, read-only)
+      - name: AC-by-AC verification (kimi-for-coding QA agent, read-only)
         env:
           ANTHROPIC_BASE_URL: https://api.kimi.ai/coding
           ANTHROPIC_API_KEY: ${{ secrets.KIMI_CODE_API_KEY }}

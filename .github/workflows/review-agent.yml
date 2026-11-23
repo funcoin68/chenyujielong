@@ -1,3 +1,6 @@
+env:
+  CLAUDE_CODE_EFFORT_LEVEL: high
+
 # .github/workflows/review-agent.yml — stage 7: ONE parameterized clean-room reviewer
 # v4.9 bug #33: plan -> dontAsk (see stage3-proposal.yml header). plan mode now
 # depends on auto mode's server-side classifier, which the Kimi gateway cannot
@@ -9,7 +12,7 @@
 # v4.1 fixes: agent output captured to a file (verdict previously went to an
 # unparsed stdout); reviewer runs in plan mode so "reviewers never fix" is
 # mechanical; output contract is stdout-only (verdict block + comments JSON fence),
-# parsed by post_review.py; Kimi Code endpoint + k3-256k pinned.
+# parsed by post_review.py; Kimi Code endpoint + kimi-for-coding pinned.
 name: review-agent
 on:
   workflow_dispatch:
@@ -42,14 +45,14 @@ jobs:
           # fetches: ticket spec + packet comment + diff. Excludes by
           # construction: proposal comments, agent chat, implementation notes.
 
-      - name: Review (k3-256k, plan mode = read-only, hard budget)
+      - name: Review (kimi-for-coding, plan mode = read-only, hard budget)
         env:
           ANTHROPIC_BASE_URL: https://api.kimi.ai/coding
           ANTHROPIC_API_KEY: ${{ secrets.KIMI_CODE_API_KEY }}
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         timeout-minutes: 15
         run: |
-          claude -p --model "${{ vars.REVIEWER_MODEL || 'k3-256k' }}"             --permission-mode dontAsk             --append-system-prompt "$(cat agent/review-${{ inputs.persona }}.md)"             "$(cat /tmp/context.md)" | tee /tmp/review_out.txt
+          claude -p --model "${{ vars.REVIEWER_MODEL || 'kimi-for-coding' }}"             --permission-mode dontAsk             --append-system-prompt "$(cat agent/review-${{ inputs.persona }}.md)"             "$(cat /tmp/context.md)" | tee /tmp/review_out.txt
 
       - name: Post structured review + completion label
         env:

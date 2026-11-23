@@ -1,3 +1,6 @@
+env:
+  CLAUDE_CODE_EFFORT_LEVEL: high
+
 # .github/workflows/stage5-implement.yml — stage 5: implementation on agent/* branch
 # v4.9 bug #34: fetch Jira attachments into context (see scripts/fetch_attachments.py).
 # Dispatched by Jira Automation when gate 1 ("Approve plan") fires.
@@ -92,7 +95,7 @@ jobs:
           python scripts/verify_pinned.py "${{ inputs.ticket_key }}" /tmp/proposal.md
           python scripts/assemble_context.py /tmp/ticket.json > /tmp/context.md
 
-      - name: Implement (k3, normal mode, hard timeout)
+      - name: Implement (kimi-for-coding, normal mode, hard timeout)
         if: steps.dup.outputs.exists != 'true'
         env:
           ANTHROPIC_BASE_URL: https://api.kimi.ai/coding
@@ -100,7 +103,7 @@ jobs:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         timeout-minutes: 45
         run: |
-          claude -p --permission-mode bypassPermissions --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --append-system-prompt "$(cat agent/implementation-instructions.md)"             "$(cat /tmp/context.md)
+          claude -p --permission-mode bypassPermissions --model "${{ vars.FRONTIER_MODEL || 'kimi-for-coding' }}"             --append-system-prompt "$(cat agent/implementation-instructions.md)"             "$(cat /tmp/context.md)
           APPROVED PROPOSAL (your spec):
           $(cat /tmp/proposal.md)" 2>&1 | tee /tmp/implement.log   # bug #40: tee so the empty-diff path can dump what the agent actually did
 
