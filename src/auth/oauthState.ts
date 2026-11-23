@@ -5,6 +5,11 @@
  * it — localStorage survives because the callback now lands on the APP origin
  * (/auth/callback). Client-only: deliberately NOT in src/lib/, which is
  * shared verbatim with the Deno Edge Function (onboarding pack §6).
+ *
+ * Defense-in-depth note: unlike the old HttpOnly cookie, localStorage is
+ * readable by any same-origin script — a future XSS on the app origin could
+ * harvest in-flight nonces. Accepted tradeoff for surviving third-party-
+ * cookie blocking (CYJ-14); recorded here so the regression is explicit.
  */
 
 export const OAUTH_STATE_KEY = 'cyj_oauth_state'

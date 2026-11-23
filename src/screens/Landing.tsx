@@ -61,7 +61,18 @@ export default function Landing() {
         // echoed state against this value instead. The redirect URL is
         // already https-validated inside startGoogleSignIn.
         const state = new URL(redirect).searchParams.get('state')
-        if (state) saveOauthState(state)
+        if (state) {
+          // localStorage.setItem can throw (SecurityError when storage is
+          // disabled, QuotaExceededError in Safari private mode) — degrade
+          // to the cookie-only flow instead of aborting a valid sign-in.
+          try {
+            saveOauthState(state)
+          } catch (err) {
+            console.warn('onSignIn: could not persist oauth state, using cookie flow only', err)
+          }
+        } else {
+          console.warn('onSignIn: auth start redirect missing state param')
+        }
         navigateTo(redirect)
       } catch (err) {
         console.warn('onSignIn: auth start failed', err)

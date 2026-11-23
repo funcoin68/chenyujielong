@@ -142,13 +142,19 @@ async function handleGoogleCallback(req: Request): Promise<Response> {
 
   // Verify the ID token only when the callback is well-formed; every failure
   // mode funnels into handleCallback, which maps it per the AC branches.
-  // CYJ-14: the gate no longer requires the state cookie to match — blocked
-  // browsers send none, and handleCallback validates state against the cookie
-  // OR the client-supplied `stored` value. Mismatch requests still die there
-  // (state_mismatch); a burned code on a rejected request is the attacker's own.
+  // CYJ-14: pre-validate state against the cookie OR the client-supplied
+  // `stored` value BEFORE the outbound Google exchange — a request whose
+  // state cannot match either channel dies without burning a Google API call
+  // or an authorization code. handleCallback still does the authoritative
+  // branch mapping.
   let claims = null
   const code = url.searchParams.get('code')
-  if (!url.searchParams.get('error') && code && url.searchParams.get('state')) {
+  const stateParam = url.searchParams.get('state')
+  const storedParam = url.searchParams.get('stored') ?? undefined
+  const stateCookie = cookies[STATE_COOKIE]
+  const stateWouldMatch =
+    !!stateParam && (stateParam === stateCookie || stateParam === storedParam)
+  if (!url.searchParams.get('error') && code && stateWouldMatch) {
     const idToken = await exchangeCodeForIdToken(code)
     if (idToken) {
       try {
@@ -162,8 +168,8 @@ async function handleGoogleCallback(req: Request): Promise<Response> {
 
   const decision = await handleCallback({
     query: url.searchParams,
-    stateCookie: cookies[STATE_COOKIE],
-    storedState: url.searchParams.get('stored') ?? undefined,
+    stateCookie,
+    storedState: storedParam,
     claims,
     appBaseUrl: CONFIG.appBaseUrl,
   })

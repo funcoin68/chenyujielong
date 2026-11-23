@@ -125,6 +125,19 @@ describe('AuthCallback (CYJ-14)', () => {
     )
   })
 
+  // Review round 1: matched state but no code from Google — a specific,
+  // accurate error label instead of forwarding an empty code to the function
+  // (which would surface as the confusing invalid_token).
+  it('matched state with missing code bounces to /?auth_error=missing_code with no function call', async () => {
+    localStorage.setItem('cyj_oauth_state', 'abc')
+    const container = await renderCallback('/auth/callback?state=abc')
+
+    expect(navCalls.urls).toEqual([])
+    expect(container.querySelector('[data-testid="probe"]')?.textContent).toBe(
+      '/?auth_error=missing_code',
+    )
+  })
+
   it('Google error param bounces with that error and no function call', async () => {
     localStorage.setItem('cyj_oauth_state', 'abc')
     const container = await renderCallback('/auth/callback?error=access_denied&state=abc')

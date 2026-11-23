@@ -110,6 +110,32 @@ describe('Landing Google sign-in (CYJ-14 AC #1)', () => {
     expect(localStorage.getItem('cyj_oauth_state')).toBe('abc')
     expect(navCalls.urls).toEqual([googleUrl])
   })
+
+  // Review round 1: localStorage.setItem can throw (storage-disabled contexts,
+  // Safari private mode) — sign-in must degrade to the cookie-only flow and
+  // still navigate to Google, not show the failure banner.
+  it('flag on: storage failure still navigates to Google with no error banner', async () => {
+    const googleUrl =
+      'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&redirect_uri=https%3A%2F%2Fapp.example%2Fauth%2Fcallback&state=abc'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify({ redirect: googleUrl }), { status: 200 })),
+      ),
+    )
+    const container = await renderLanding('/?flags=flag-cyj-7')
+    // Replace the working stub with one whose setItem throws (QuotaExceeded).
+    const failing = memoryStorage()
+    failing.setItem = () => {
+      throw new DOMException('quota exceeded', 'QuotaExceededError')
+    }
+    vi.stubGlobal('localStorage', failing)
+
+    await clickSignIn(container)
+
+    expect(navCalls.urls).toEqual([googleUrl])
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
 })
 
 describe('Landing Google sign-in (CYJ-10 AC #4)', () => {

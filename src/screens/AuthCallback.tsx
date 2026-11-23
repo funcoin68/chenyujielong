@@ -35,11 +35,18 @@ export default function AuthCallback() {
       navigate('/?auth_error=state_mismatch')
       return
     }
+    // State matched but Google sent no code — surface a specific error rather
+    // than forwarding an empty code to the function (which would label this
+    // invalid_token, conflating a malformed callback with a bad token).
+    if (!code) {
+      navigate('/?auth_error=missing_code')
+      return
+    }
     // AC #2: match — complete sign-in at the function callback. Cross-origin,
     // so the top-level navigation goes through navigateTo(), not useNavigate()
     // (react-router would treat the function URL as an internal route).
     const target = new URL(`${FUNCTIONS_URL}/auth/google/callback`)
-    target.searchParams.set('code', code ?? '')
+    target.searchParams.set('code', code)
     target.searchParams.set('state', state)
     target.searchParams.set('stored', stored)
     navigateTo(target.toString())
