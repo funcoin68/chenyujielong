@@ -150,12 +150,16 @@ function createThrottled(userId: string, now = Date.now()): boolean {
   return false
 }
 
-// CYJ-23 review (round 1, security): close-room is a new authenticated write
+// CYJ-23 review (round 2, security): close-room is a new authenticated write
 // with no limit while the sibling write carries createThrottled above. Damage
 // is bounded (owner-only, idempotent skip), but a fleet of accounts can still
 // drive repeated SELECT+PATCH churn and closed-row accumulation — so the same
-// in-memory sliding window applies, checked before the lookup so the SELECT
-// churn is capped too. Separate map: creates and closes budget independently.
+// in-memory sliding window applies. Checked only AFTER the decision layer
+// returns 200 (below), so requests that end in 400/403/404 never consume the
+// caller's budget — the round-1 position (before the lookup) let a caller
+// (or an owner retrying after a transient failure) burn the 10-per-minute
+// window on requests that change nothing. Separate map: creates and closes
+// budget independently.
 const CLOSE_WINDOW_MS = 60_000
 const CLOSE_MAX_PER_WINDOW = 10
 const closeHits = new Map<string, number[]>()
@@ -297,10 +301,6 @@ async function handleCloseRoom(req: Request): Promise<Response> {
     return json({ error: parsed.reason }, 400, headers)
   }
 
-  if (closeThrottled(userId)) {
-    return json({ error: 'too many close requests, try again in a minute' }, 429, headers)
-  }
-
   const selected = await selectRoomById(parsed.roomId)
   if (!selected.ok) {
     console.error(`room-authority: close-room lookup failed for room ${parsed.roomId}`)
@@ -309,6 +309,12 @@ async function handleCloseRoom(req: Request): Promise<Response> {
   const decision = closeRoomDecision({ userId, room: selected.row })
   if (decision.status !== 200) {
     return json(decision.body, decision.status, headers)
+  }
+
+  // Only genuine close decisions consume the budget (see closeThrottled) —
+  // 400/403/404 above never count against the caller.
+  if (closeThrottled(userId)) {
+    return json({ error: 'too many close requests, try again in a minute' }, 429, headers)
   }
 
   // Idempotent: an already-closed room skips the write (the decision layer
