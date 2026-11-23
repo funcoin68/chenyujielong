@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fetchCurrentUser } from './sessionClient'
+import { fetchCurrentUser, invalidateSessionCache, signOutClient } from './sessionClient'
 import { saveSessionToken, readSessionToken, SESSION_TOKEN_KEY } from './sessionToken'
 import { memoryStorage } from './memoryStorage'
 
@@ -32,7 +32,12 @@ afterEach(() => {
   configState.functionsUrl = 'https://fn.example'
 })
 
-beforeEach(() => vi.stubGlobal('localStorage', memoryStorage()))
+beforeEach(() => {
+  vi.stubGlobal('localStorage', memoryStorage())
+  // CYJ-26: fetchCurrentUser caches per token — without a reset the cache
+  // leaks between tests and produces false passes (rule 9).
+  invalidateSessionCache()
+})
 
 describe('fetchCurrentUser', () => {
   it('resolves null without a network call when FUNCTIONS_URL is not configured', async () => {
@@ -151,5 +156,108 @@ describe('fetchCurrentUser — x-cyj-session header transport (CYJ-15)', () => {
     )
     expect(await fetchCurrentUser()).toEqual(USER)
     expect(readSessionToken()).toBe('tok-live')
+  })
+})
+
+describe('fetchCurrentUser — session cache (CYJ-26)', () => {
+  const okStub = () =>
+    mockFetch(() => Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 })))
+
+  it('AC #1: a second call with the same token reuses the cache — no second fetch, same identity', async () => {
+    const spy = okStub()
+    expect(await fetchCurrentUser()).toEqual(USER)
+    expect(await fetchCurrentUser()).toEqual(USER)
+    const meCalls = spy.mock.calls.filter(([url]) => String(url).endsWith('/auth/me'))
+    expect(meCalls).toHaveLength(1)
+  })
+
+  it('AC #2: two calls while the first is in-flight share one fetch and both get the same user', async () => {
+    let resolveFetch!: (res: Response) => void
+    const spy = mockFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve
+        }),
+    )
+    const first = fetchCurrentUser()
+    const second = fetchCurrentUser()
+    resolveFetch(new Response(JSON.stringify({ user: USER }), { status: 200 }))
+    const [userA, userB] = await Promise.all([first, second])
+    expect(userA).toEqual(USER)
+    expect(userB).toEqual(USER)
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('a token change between calls misses the cache and refetches', async () => {
+    const spy = okStub()
+    saveSessionToken('tok-before')
+    await fetchCurrentUser()
+    saveSessionToken('tok-after')
+    await fetchCurrentUser()
+    const meCalls = spy.mock.calls.filter(([url]) => String(url).endsWith('/auth/me'))
+    expect(meCalls).toHaveLength(2)
+  })
+
+  it('AC #4: a 401 clears the cached session, propagates null, and the next call refetches', async () => {
+    saveSessionToken('tok-expired')
+    const spy = mockFetch(() =>
+      Promise.resolve(new Response('{"error":"no session"}', { status: 401 })),
+    )
+    expect(await fetchCurrentUser()).toBeNull()
+    expect(readSessionToken()).toBeNull()
+    // Signed-out state is cached under the cleared token's key, so this call
+    // (no token stored) misses and refetches — the failure is never cached
+    // as a success.
+    expect(await fetchCurrentUser()).toBeNull()
+    const meCalls = spy.mock.calls.filter(([url]) => String(url).endsWith('/auth/me'))
+    expect(meCalls).toHaveLength(2)
+  })
+
+  it('a cached signed-out (anonymous 401) state is reused without refetching', async () => {
+    const spy = mockFetch(() =>
+      Promise.resolve(new Response('{"error":"no session"}', { status: 401 })),
+    )
+    expect(await fetchCurrentUser()).toBeNull()
+    expect(await fetchCurrentUser()).toBeNull()
+    const meCalls = spy.mock.calls.filter(([url]) => String(url).endsWith('/auth/me'))
+    expect(meCalls).toHaveLength(1)
+  })
+
+  it('a network throw is never cached — the next call retries', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const spy = mockFetch(() => Promise.reject(new Error('network down')))
+    expect(await fetchCurrentUser()).toBeNull()
+    expect(await fetchCurrentUser()).toBeNull()
+    expect(spy).toHaveBeenCalledTimes(2)
+    expect(warn).toHaveBeenCalledTimes(2)
+  })
+
+  it('AC #3: invalidateSessionCache makes the next call refetch', async () => {
+    const spy = okStub()
+    expect(await fetchCurrentUser()).toEqual(USER)
+    invalidateSessionCache()
+    expect(await fetchCurrentUser()).toEqual(USER)
+    const meCalls = spy.mock.calls.filter(([url]) => String(url).endsWith('/auth/me'))
+    expect(meCalls).toHaveLength(2)
+  })
+
+  it('AC #3: signOutClient clears the stored token and cache — the next call is a fresh fetch, not the stale identity', async () => {
+    saveSessionToken('tok-live')
+    let signedIn = true
+    const spy = mockFetch(() =>
+      Promise.resolve(
+        new Response(
+          signedIn ? JSON.stringify({ user: USER }) : '{"error":"no session"}',
+          { status: signedIn ? 200 : 401 },
+        ),
+      ),
+    )
+    expect(await fetchCurrentUser()).toEqual(USER)
+    signOutClient()
+    expect(readSessionToken()).toBeNull()
+    signedIn = false
+    expect(await fetchCurrentUser()).toBeNull()
+    const meCalls = spy.mock.calls.filter(([url]) => String(url).endsWith('/auth/me'))
+    expect(meCalls).toHaveLength(2)
   })
 })
