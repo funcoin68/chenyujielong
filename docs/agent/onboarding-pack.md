@@ -2,7 +2,7 @@
 <!-- GENERATED FILE — do not edit by hand. Narrative sections come from
      docs/agent/pack-curated.md; mechanical sections from git. Regenerate:
      python scripts/build_context_pack.py (nightly workflow opens the PR). -->
-<!-- source commit: 1d9d724 · generated: 2026-11-22 · pack owner: funcoin68 -->
+<!-- source commit: a46c7dd · generated: 2026-11-23 · pack owner: funcoin68 -->
 
 ## 0. Mission
 成语接龙 (Chinese idiom-chain) multiplayer web game — players take turns
@@ -13,14 +13,14 @@ game. Keep game code and pipeline code conceptually separate.
 
 ## 1. Module map
 - `src/lib/` (10 files) — Shared rule primitives (Deno Edge Function + Vitest both import). chain.test.ts, chain.ts, flow.test.ts, flow.ts, googleIdToken.test.ts, googleIdToken.ts, session.test.ts, session.ts … (+2)
-- `src/screens/` (15 files) — Route-level screens (spec §3). Gameplay.css, Gameplay.tsx, Landing.css, Landing.tsx, Lobby.css, Lobby.test.tsx, Lobby.tsx, Profile.css … (+7)
+- `src/screens/` (19 files) — Route-level screens (spec §3). AuthCallback.css, AuthCallback.test.tsx, AuthCallback.tsx, Gameplay.css, Gameplay.tsx, Landing.css, Landing.test.tsx, Landing.tsx … (+11)
 - `src/ui/` (13 files) — Reusable components (one CSS per component). ChainView.css, ChainView.tsx, CodeInput.css, CodeInput.tsx, IdiomTile.css, IdiomTile.tsx, Modal.css, Modal.test.tsx … (+5)
 - `src/mock/` (1 files) — Fixture data — the entire current 'backend'. data.ts
-- `supabase/functions/` (5 files) — Edge Functions (Deno; transport-only, rules in src/lib). README.md, config.toml, config.toml, index.ts, index.ts
+- `supabase/functions/` (3 files) — Edge Functions (Deno; transport-only, rules in src/lib). README.md, index.ts, index.ts
 - `scripts/` (33 files) — PIPELINE glue (stage 1-10) — not game code. _pipeline_lib.py, assemble_context.py, build_context_pack.py, build_outcome_record.py, build_review_packet.py, check_coverage_floor.py, check_diff_size.py, check_merge_eligibility.py … (+25)
-- `.github/workflows/` (11 files) — PIPELINE workflows — human-owned, agents never edit. ci-pr-gates.yml, onboarding-pack.yml, review-agent.yml, stage10-learn.yml, stage3-proposal.yml, stage3-respond.yml, stage5-implement.yml, stage7-fix.yml … (+3)
+- `.github/workflows/` (12 files) — PIPELINE workflows — human-owned, agents never edit. ci-pr-gates.yml, conflict-resolver.yml, onboarding-pack.yml, review-agent.yml, stage10-learn.yml, stage3-proposal.yml, stage3-respond.yml, stage5-implement.yml … (+4)
 - `docs/agent/` (4 files) — Agent memory (this pack, CORRECTIONS.md). CORRECTIONS.md, CYJ-6-implementation-notes.md, onboarding-pack.md, pack-curated.md
-- `agent/` (7 files) — Agent instruction prompts per stage. fix-instructions.md, implementation-instructions.md, proposal-instructions.md, proposal-template.md, review-functional.md, review-security.md, review-standards.md
+- `agent/` (8 files) — Agent instruction prompts per stage. conflict-resolution-instructions.md, fix-instructions.md, implementation-instructions.md, proposal-instructions.md, proposal-template.md, review-functional.md, review-security.md, review-standards.md
 - repo root — CLAUDE.md, eslint.config.js, index.html, package.json, repo-registry.yaml, tsconfig.json, vercel.json, vite.config.ts
 
 ## 2. Request lifecycle
@@ -48,7 +48,7 @@ migrations via `supabase db diff` only, never hand-edited after apply
 - POST /functions/v1/validate-move — body {previousIdiom: string, move: string}.
   200 {valid:true} · 400 {valid:false, reason} (bad input OR chain violation —
   both are 400, never 500) · 405 non-POST · 413 body >1KB.
-  JWT-pinned (supabase/functions/validate-move/config.toml verify_jwt=true).
+  JWT-pinned (root supabase/config.toml [functions.validate-move] verify_jwt=true).
 - Frontend routes (spec §3): / Landing · /lobby · /room/:roomId WaitingRoom ·
   /room/:roomId/play Gameplay · /room/:roomId/results Results · /profile ·
   * → Landing. AppRoutes is exported separately so tests mount MemoryRouter.
@@ -82,52 +82,52 @@ migrations via `supabase db diff` only, never hand-edited after apply
 
 ## 7. Hotspots & ownership
 App code (most-changed first, last 90d — high churn = review carefully, keep tests close):
+- `src/screens/Landing.tsx` — 8 commits
+- `src/screens/Lobby.tsx` — 8 commits
+- `supabase/functions/auth/index.ts` — 7 commits
+- `src/screens/Landing.test.tsx` — 6 commits
+- `src/screens/Lobby.test.tsx` — 6 commits
+- `src/lib/auth/flow.test.ts` — 6 commits
+- `src/lib/auth/flow.ts` — 6 commits
+- `src/auth/sessionClient.ts` — 5 commits
 - `package.json` — 5 commits
-- `src/screens/Landing.tsx` — 4 commits
-- `src/screens/Lobby.tsx` — 4 commits
-- `src/auth/sessionClient.test.ts` — 3 commits
-- `src/auth/sessionClient.ts` — 3 commits
-- `src/lib/auth/flow.test.ts` — 3 commits
-- `src/lib/auth/flow.ts` — 3 commits
-- `src/App.render.test.tsx` — 3 commits
-- `src/main.tsx` — 3 commits
-- `.gitignore` — 3 commits
-- `src/config.ts` — 2 commits
-- `src/screens/Lobby.test.tsx` — 2 commits
-- `supabase/functions/auth/index.ts` — 2 commits
-- `src/screens/Lobby.css` — 2 commits
-- `src/lib/auth/googleIdToken.ts` — 2 commits
+- `src/auth/sessionClient.test.ts` — 4 commits
+- `src/lib/auth/session.test.ts` — 3 commits
+- `src/lib/auth/session.ts` — 3 commits
+- `src/screens/AuthCallback.test.tsx` — 3 commits
+- `src/App.tsx` — 3 commits
+- `src/config.ts` — 3 commits
 
 Pipeline infrastructure (churn here = pipeline debugging, not app risk):
-- `.github/workflows/stage5-implement.yml` — 10 commits
-- `.github/workflows/stage7-fix.yml` — 8 commits
+- `.github/workflows/stage5-implement.yml` — 11 commits
+- `.github/workflows/stage7-fix.yml` — 9 commits
+- `.github/workflows/stage8b-qa-evidence.yml` — 9 commits
 - `.github/workflows/ci-pr-gates.yml` — 8 commits
-- `.github/workflows/stage8b-qa-evidence.yml` — 8 commits
-- `.github/workflows/stage10-learn.yml` — 5 commits
+- `scripts/post_proposal.py` — 6 commits
 
 Ownership: single service `idiom-game` (repo-registry.yaml), owner funcoin68, risk tier 3. `.github/workflows/` is human-owned — workflow diffs from an agent are auto-reverted.
 
 ## 8. Recent decisions (rolling, last 90 days, from git log)
+- 2026-11-22 — fix-44: conflict-resolver — git identity on runner + MERGE_HEAD hardening
+- 2026-11-22 — feat: conflict-resolver workflow — agent resolves agent/* PR merge conflicts
+- 2026-11-23 — CYJ-16: remove flag-cyj-7 gate — Google sign-in live for all users
+- 2026-11-23 — agent: address review comments (round 2)
+- 2026-11-23 — agent: address review comments (round 1)
+- 2026-11-23 — CYJ-15: fix /auth/me 401 after Google sign-in via x-cyj-session header transport
+- 2026-11-23 — agent: address review comments (round 2)
+- 2026-11-23 — agent: address review comments (round 2)
+- 2026-11-23 — agent: address review comments (round 1)
+- 2026-11-23 — CYJ-14: point OAuth redirect at app-domain callback, accept stored param
+- 2026-11-23 — CYJ-14: persist OAuth state in localStorage + app-domain callback route
+- 2026-11-23 — CYJ-13: consolidate Edge Function verify_jwt pins into root supabase/config.toml
+- 2026-11-22 — fix-43: stage3-respond Q&A transcript dropped comment bodies (empty Jira 400)
+- 2026-11-22 — chore: switch agent pipeline models k3/k3-256k/k3.1 -> kimi-for-coding (K2.8)
+- 2026-11-22 — CYJ-10 checkpoint 3: FUNCTIONS_URL resolution — derive from VITE_SUPABASE_URL, append missing /functions/v1 with loud warn
+- 2026-11-22 — CYJ-10 checkpoint 2: fetch-based Google sign-in on Landing
+- 2026-11-22 — CYJ-10 checkpoint 1: state cookie SameSite=None, auth-start returns 200 {redirect}
+- 2026-11-22 — chore: regenerate onboarding pack (2026-11-22)
 - 2026-11-22 — CYJ-9: carry publishable anon key as apikey param on auth-start navigation
 - 2026-11-22 — stage9b: skip prod deploy when push touches only .github/workflows, agent/, docs/, scripts/ (paths-ignore)
-- 2026-11-22 — fix #42: stage10 encode perms + outcome-record artifact handoff + measure checkout + corrections loop guard
-- 2026-11-22 — agent: address review comments (round 2)
-- 2026-11-22 — agent: address review comments (round 1)
-- 2026-11-22 — fix #41: PR body comes from agent-written /tmp/pr_body.md — placeholder modules:[] raced the scope guard
-- 2026-11-22 — agent: CYJ-8 implementation — session consumption + visible callback failures
-- 2026-11-22 — fix #40: stage5 empty-diff guard - branch-vs-main check, evidence dump, green on no-op
-- 2026-11-22 — CYJ-7 checkpoint 3: auth Edge Function + first migration (users, sessions)
-- 2026-11-22 — CYJ-7 checkpoint 2: flag-gated Landing sign-in + auth_error indicator
-- 2026-11-22 — CYJ-7 checkpoint 1: auth decision layer in src/lib/auth (token verify, sessions, flow)
-- 2026-11-22 — fix-39: tolerate --- delimiters inside the agent's yaml fence
-- 2026-11-22 — context: real onboarding pack + nightly refresh + wire pack into stage 7
-- 2026-11-21 — fix(stage9b): db push needs --remote=<ref> --password --yes (defaults to local stack)
-- 2026-11-21 — ci: stage 9b — deploy to Vercel prod + Supabase prod on merge to main
-- 2026-11-21 — fix-37: normalize verdict contract + aggregator self-heal
-- 2026-11-21 — fix-36: diff-cap human sign-off via diff-cap-signed-off PR label
-- 2026-11-21 — agent: CYJ-6 implementation
-- 2026-11-21 — CYJ-6: fix ordinal copy (3rd not 3th), waiting-room desktop grid span
-- 2026-11-21 — CYJ-6 checkpoint 3: screens + routing
 
 ## 9. Open risks / known debt
 - No persistence layer: no schema, no migrations, no Realtime — game state is
