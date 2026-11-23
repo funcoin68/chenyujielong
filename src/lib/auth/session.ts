@@ -64,6 +64,21 @@ export function clearStateCookie(): string {
   return `${STATE_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`
 }
 
+/**
+ * CYJ-15: which credential authenticates /auth/me — the HttpOnly session
+ * cookie when the browser sent it, else the x-cyj-session header the client
+ * attaches (browsers blocking third-party cookies never send the cross-site
+ * cookie). The cookie wins when both arrive (HttpOnly beats the
+ * localStorage-readable header value). Null when neither is present, which
+ * the Edge Function maps to 401 {"error":"no session"} — never a 500.
+ */
+export function resolveSessionToken(
+  cookieHeader: string | null,
+  headerToken: string | null,
+): string | null {
+  return parseCookies(cookieHeader)[SESSION_COOKIE] ?? headerToken
+}
+
 export function parseCookies(header: string | null): Record<string, string> {
   const out: Record<string, string> = {}
   if (!header) return out

@@ -6,12 +6,12 @@ import { verifyGoogleIdToken } from '../../../src/lib/auth/googleIdToken.ts'
 import { buildAuthorizeUrl, encodeStateWithFlags, generateState, handleCallback } from '../../../src/lib/auth/flow.ts'
 import type { UserUpsert } from '../../../src/lib/auth/flow.ts'
 import {
-  SESSION_COOKIE,
   STATE_COOKIE,
   clearSessionCookie,
   hashSessionToken,
   isSessionExpired,
   parseCookies,
+  resolveSessionToken,
   serializeStateCookie,
 } from '../../../src/lib/auth/session.ts'
 
@@ -205,9 +205,16 @@ async function handleGoogleCallback(req: Request): Promise<Response> {
 }
 
 // AC #5: resolve the session cookie to the user it belongs to.
+// CYJ-15: cookie-first, then the x-cyj-session header — browsers blocking
+// third-party cookies never send the cross-site cyj_session cookie, so the
+// client (which received the raw token on the success redirect, stored it,
+// and attaches it as this header) is the channel that works everywhere. The
+// cookie wins when both arrive (it is HttpOnly; the header value comes from
+// localStorage, which any same-origin script can read). The 401 contract
+// below is unchanged: no token → {"error":"no session"}, never a 500.
 async function handleMe(req: Request): Promise<Response> {
   const headers = withCors(new Headers())
-  const token = parseCookies(req.headers.get('cookie'))[SESSION_COOKIE]
+  const token = resolveSessionToken(req.headers.get('cookie'), req.headers.get('x-cyj-session'))
   if (!token) return json({ error: 'no session' }, 401, headers)
 
   const tokenHash = await hashSessionToken(token)
@@ -238,7 +245,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const headers = withCors(new Headers())
     // CYJ-10: the apikey credential header triggers a preflight on the
     // client's cross-site /auth/google/start fetch — it must be allowed.
-    headers.set('Access-Control-Allow-Headers', 'Content-Type, apikey')
+    // CYJ-15: so does x-cyj-session on /auth/me (a non-simple header).
+    headers.set('Access-Control-Allow-Headers', 'Content-Type, apikey, x-cyj-session')
     headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
     return new Response(null, { status: 204, headers })
   }

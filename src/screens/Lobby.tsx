@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { CodeInput } from '../ui/CodeInput'
 import { Modal } from '../ui/Modal'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
@@ -7,6 +7,7 @@ import { RoomSettings, type RoomSettingsValues } from './RoomSettings'
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
 import { hasFlag } from '../flags'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
+import { saveSessionToken } from '../auth/sessionToken'
 import { createRoom } from '../rooms/roomClient'
 import './Lobby.css'
 
@@ -16,19 +17,35 @@ const ordinal = (n: number) => (n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3
 /** S2 — Lobby (Home). */
 export default function Lobby() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
   const [joinOpen, setJoinOpen] = useState(false)
-  // flag-cyj-7: consume the OAuth session (CYJ-8). The callback redirect
-  // carries the flags back to /lobby (embedded in the OAuth state at start),
-  // which is what makes this gate reachable end-to-end. Flag off / no
-  // session / any fetch failure leaves authUser null and the render
-  // identical to the mock — AC: no visible change to the default view.
+  // Consume the OAuth session (CYJ-8) on every mount — CYJ-16 retired the
+  // flag-cyj-7 gate, and the OAuth callback redirects to /lobby with no flags
+  // in the URL. No session / any fetch failure leaves authUser null and the
+  // render identical to the mock — AC: no visible change to the default view.
   // (The FUNCTIONS_URL check lives inside fetchCurrentUser — one home.)
-  const authEnabled = hasFlag('flag-cyj-7', searchParams)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  // CYJ-15: the sign-in success redirect hands the raw session token in a
+  // #cyj_session URL FRAGMENT (flow.ts — a query string would leak the
+  // long-lived token into server logs/history/Referer). Consume it BEFORE
+  // the session fetch, store it durably so fetchCurrentUser attaches it as
+  // the x-cyj-session header, and strip it via a router replace before it
+  // lands in browser history — the token is a one-shot hand-off, not a
+  // bookmarkable credential. Stripping is NOT flag-gated: the invariant
+  // must hold unconditionally, so a token-bearing URL never sits in the
+  // address bar/history. CYJ-16 retired flag-cyj-7, so the persist is
+  // unconditional too — the OAuth callback lands on /lobby flagless.
+  // Separate from the fetch effect so stripping the fragment (a location
+  // change) cannot retrigger the fetch.
   useEffect(() => {
-    if (!authEnabled) return
+    const token = new URLSearchParams(location.hash.slice(1)).get('cyj_session')
+    if (!token) return
+    saveSessionToken(token)
+    navigate(location.pathname + location.search, { replace: true })
+  }, [location, navigate])
+  useEffect(() => {
     let cancelled = false
     fetchCurrentUser().then((user) => {
       if (!cancelled) setAuthUser(user)
@@ -36,7 +53,7 @@ export default function Lobby() {
     return () => {
       cancelled = true
     }
-  }, [authEnabled])
+  }, [])
   const displayName = authUser?.display_name ?? PROFILE.name
 
   // flag-cyj-17: real create-room through the room-authority Edge Function.

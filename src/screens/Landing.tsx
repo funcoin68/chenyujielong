@@ -4,7 +4,6 @@ import { ChainView } from '../ui/ChainView'
 import { IdiomTile } from '../ui/IdiomTile'
 import { Modal } from '../ui/Modal'
 import { DEMO_CHAIN, PLAYERS_BY_ID, ROOM } from '../mock/data'
-import { hasFlag } from '../flags'
 import { FUNCTIONS_URL } from '../config'
 import { navigateTo, startGoogleSignIn } from '../auth/authStart'
 import { saveOauthState } from '../auth/oauthState'
@@ -45,13 +44,14 @@ export default function Landing() {
   const authError = searchParams.get('auth_error')
 
   const onSignIn = async () => {
-    // flag-cyj-7: real Google OAuth via the auth Edge Function. Flag off (or
-    // functions URL not configured) keeps the mock navigate to the lobby.
-    // The start endpoint is fetched programmatically (a navigation cannot set
-    // the apikey header the gateway requires) and returns the Google
-    // authorize URL to navigate to; the flags query rides along so the
-    // function can embed it in the OAuth state for the trip back to /lobby.
-    if (hasFlag('flag-cyj-7', searchParams) && FUNCTIONS_URL) {
+    // Real Google OAuth via the auth Edge Function (CYJ-16: no longer
+    // flag-gated). FUNCTIONS_URL unconfigured (local dev) keeps the mock
+    // navigate to the lobby. The start endpoint is fetched programmatically
+    // (a navigation cannot set the apikey header the gateway requires) and
+    // returns the Google authorize URL to navigate to; the flags query rides
+    // along so the function can embed it in the OAuth state for the trip back
+    // to /lobby.
+    if (FUNCTIONS_URL) {
       setSignInFailed(false)
       try {
         const redirect = await startGoogleSignIn(FUNCTIONS_URL, searchParams.get('flags'))
@@ -103,7 +103,6 @@ export default function Landing() {
           </p>
         )}
 
-        {/* flag-cyj-7: real Google OAuth; flag off keeps the mock lobby navigate */}
         <button ref={signInRef} type="button" className="btn btn-lg landing-google" onClick={onSignIn}>
           <GoogleMark />
           Sign in with Google
