@@ -1,22 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { OAUTH_STATE_KEY, saveOauthState, takeOauthState } from './oauthState'
-
-// The vitest jsdom env here exposes no localStorage (opaque-origin window),
-// so tests stub a deterministic in-memory Storage.
-function memoryStorage(): Storage {
-  const data = new Map<string, string>()
-  return {
-    get length() {
-      return data.size
-    },
-    clear: () => data.clear(),
-    getItem: (k) => data.get(k) ?? null,
-    key: (i) => [...data.keys()][i] ?? null,
-    removeItem: (k) => void data.delete(k),
-    setItem: (k, v) => void data.set(k, String(v)),
-  }
-}
+import { memoryStorage } from './memoryStorage'
 
 beforeEach(() => vi.stubGlobal('localStorage', memoryStorage()))
 afterEach(() => vi.unstubAllGlobals())

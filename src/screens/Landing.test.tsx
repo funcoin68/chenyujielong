@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import Landing from './Landing'
+import { memoryStorage } from '../auth/memoryStorage'
 
 // The functions URL + anon key are baked at build time; tests provide both so
 // the flag-cyj-7 sign-in path is enabled (mirrors Lobby.test.tsx).
@@ -37,21 +38,7 @@ vi.mock('../auth/authStart', async (importOriginal) => ({
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 // The vitest jsdom env here exposes no localStorage (opaque-origin window),
-// so tests stub a deterministic in-memory Storage (CYJ-14 assertions).
-function memoryStorage(): Storage {
-  const data = new Map<string, string>()
-  return {
-    get length() {
-      return data.size
-    },
-    clear: () => data.clear(),
-    getItem: (k) => data.get(k) ?? null,
-    key: (i) => [...data.keys()][i] ?? null,
-    removeItem: (k) => void data.delete(k),
-    setItem: (k, v) => void data.set(k, String(v)),
-  }
-}
-
+// so tests stub a deterministic in-memory Storage (shared helper).
 const roots: Root[] = []
 
 async function renderLanding(route: string): Promise<HTMLElement> {
