@@ -296,7 +296,7 @@ describe('Landing session check (CYJ-19)', () => {
 describe('Landing Google sign-in (CYJ-10 AC #4)', () => {
   it('clicking sign-in calls the start endpoint programmatically and navigates to the redirect it returns', async () => {
     const googleUrl = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&state=abc'
-    const fetchSpy = vi.fn(() =>
+    const fetchSpy = vi.fn<typeof fetch>(() =>
       Promise.resolve(new Response(JSON.stringify({ redirect: googleUrl }), { status: 200 })),
     )
     vi.stubGlobal('fetch', fetchSpy)
