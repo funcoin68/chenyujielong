@@ -23,16 +23,17 @@ export type ParseCreateRoomBodyResult =
   | { ok: true; settings: RoomSettingsInput }
   | { ok: false; reason: string }
 
-/**
- * Validates the create-room request body. Mirrors validateMove.ts: malformed
- * input and out-of-range settings are both 400, never a silent default.
- */
-export function parseCreateRoomBody(input: unknown): ParseCreateRoomBodyResult {
-  if (typeof input !== 'object' || input === null) {
-    return { ok: false, reason: 'request body must be a JSON object' }
-  }
-  const body = input as Record<string, unknown>
+export type ParseRoomSettingsFieldsResult =
+  | { ok: true; settings: RoomSettingsInput }
+  | { ok: false; reason: string }
 
+/**
+ * Validates just the settings fields (name, rule, turnSeconds, maxPlayers,
+ * winCondition, dictionary). CYJ-28: extracted from parseCreateRoomBody so
+ * create-room and update-room share ONE copy of the CHECK-constraint rules —
+ * two copies would drift (rule 7).
+ */
+export function parseRoomSettingsFields(body: Record<string, unknown>): ParseRoomSettingsFieldsResult {
   if (typeof body.name !== 'string' || body.name.trim() === '') {
     return { ok: false, reason: 'name must be a non-empty string' }
   }
@@ -66,6 +67,17 @@ export function parseCreateRoomBody(input: unknown): ParseCreateRoomBodyResult {
       dictionary: body.dictionary,
     },
   }
+}
+
+/**
+ * Validates the create-room request body. Mirrors validateMove.ts: malformed
+ * input and out-of-range settings are both 400, never a silent default.
+ */
+export function parseCreateRoomBody(input: unknown): ParseCreateRoomBodyResult {
+  if (typeof input !== 'object' || input === null) {
+    return { ok: false, reason: 'request body must be a JSON object' }
+  }
+  return parseRoomSettingsFields(input as Record<string, unknown>)
 }
 
 function isOneOf<T extends string>(value: unknown, allowed: readonly T[]): value is T {

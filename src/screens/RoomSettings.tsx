@@ -16,6 +16,13 @@ export interface RoomSettingsProps {
   /** CYJ-27: initial room name derived from the signed-in user. Empty/undefined
    *  renders the field empty with its placeholder — never another user's name. */
   defaultName?: string
+  /** CYJ-28: pre-fill every field from persisted room values (settings
+   *  screen). Falls back to the create-form defaults when absent, so the
+   *  Lobby create modal is untouched. */
+  initialValues?: RoomSettingsValues
+  /** CYJ-28: false renders every control read-only/disabled and hides the
+   *  submit button (non-hosts on the settings screen). Defaults to true. */
+  editable?: boolean
 }
 
 /** CYJ-27: first whitespace-separated token + "'s room" ("Wei Chen" →
@@ -34,13 +41,19 @@ const PLAYER_COUNTS = [2, 3, 4, 5, 6]
  * always enabled (spec S3). Shared by the Lobby create modal and the
  * waiting-room host settings.
  */
-export function RoomSettings({ submitLabel, onSubmit, defaultName }: RoomSettingsProps) {
-  const [name, setName] = useState(defaultName ?? '')
-  const [rule, setRule] = useState<'strict' | 'homophone'>('strict')
-  const [timer, setTimer] = useState(30)
-  const [players, setPlayers] = useState(4)
-  const [win, setWin] = useState<'rounds' | 'elimination'>('rounds')
-  const [dict, setDict] = useState<'common' | 'full'>('common')
+export function RoomSettings({
+  submitLabel,
+  onSubmit,
+  defaultName,
+  initialValues,
+  editable = true,
+}: RoomSettingsProps) {
+  const [name, setName] = useState(initialValues?.name ?? defaultName ?? '')
+  const [rule, setRule] = useState<'strict' | 'homophone'>(initialValues?.rule ?? 'strict')
+  const [timer, setTimer] = useState(initialValues?.turnSeconds ?? 30)
+  const [players, setPlayers] = useState(initialValues?.maxPlayers ?? 4)
+  const [win, setWin] = useState<'rounds' | 'elimination'>(initialValues?.winCondition ?? 'rounds')
+  const [dict, setDict] = useState<'common' | 'full'>(initialValues?.dictionary ?? 'common')
 
   return (
     <form
@@ -58,6 +71,7 @@ export function RoomSettings({ submitLabel, onSubmit, defaultName }: RoomSetting
           onChange={(e) => setName(e.target.value)}
           placeholder="Room name"
           maxLength={24}
+          readOnly={!editable}
         />
       </label>
 
@@ -69,6 +83,7 @@ export function RoomSettings({ submitLabel, onSubmit, defaultName }: RoomSetting
             name="rule"
             checked={rule === 'strict'}
             onChange={() => setRule('strict')}
+            disabled={!editable}
           />{' '}
           Strict 末字接龙
         </label>
@@ -78,6 +93,7 @@ export function RoomSettings({ submitLabel, onSubmit, defaultName }: RoomSetting
             name="rule"
             checked={rule === 'homophone'}
             onChange={() => setRule('homophone')}
+            disabled={!editable}
           />{' '}
           Homophone 同音可接
         </label>
@@ -93,6 +109,7 @@ export function RoomSettings({ submitLabel, onSubmit, defaultName }: RoomSetting
               className={`chip room-settings-chip${timer === s ? ' chip-selected' : ''}`}
               aria-pressed={timer === s}
               onClick={() => setTimer(s)}
+              disabled={!editable}
             >
               {s}s
             </button>
@@ -110,6 +127,7 @@ export function RoomSettings({ submitLabel, onSubmit, defaultName }: RoomSetting
               className={`chip room-settings-chip${players === n ? ' chip-selected' : ''}`}
               aria-pressed={players === n}
               onClick={() => setPlayers(n)}
+              disabled={!editable}
             >
               {n}
             </button>
@@ -125,6 +143,7 @@ export function RoomSettings({ submitLabel, onSubmit, defaultName }: RoomSetting
             name="win"
             checked={win === 'rounds'}
             onChange={() => setWin('rounds')}
+            disabled={!editable}
           />{' '}
           Best of 5 rounds
         </label>
@@ -134,6 +153,7 @@ export function RoomSettings({ submitLabel, onSubmit, defaultName }: RoomSetting
             name="win"
             checked={win === 'elimination'}
             onChange={() => setWin('elimination')}
+            disabled={!editable}
           />{' '}
           Elimination 淘汰制
         </label>
@@ -147,6 +167,7 @@ export function RoomSettings({ submitLabel, onSubmit, defaultName }: RoomSetting
             name="dict"
             checked={dict === 'common'}
             onChange={() => setDict('common')}
+            disabled={!editable}
           />{' '}
           Common 常用 (≈5k)
         </label>
@@ -156,14 +177,17 @@ export function RoomSettings({ submitLabel, onSubmit, defaultName }: RoomSetting
             name="dict"
             checked={dict === 'full'}
             onChange={() => setDict('full')}
+            disabled={!editable}
           />{' '}
           Full 全词典 (≈30k)
         </label>
       </fieldset>
 
-      <button type="submit" className="btn btn-primary btn-lg">
-        {submitLabel}
-      </button>
+      {editable && (
+        <button type="submit" className="btn btn-primary btn-lg">
+          {submitLabel}
+        </button>
+      )}
     </form>
   )
 }

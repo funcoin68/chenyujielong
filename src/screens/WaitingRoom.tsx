@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Modal } from '../ui/Modal'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
-import { RoomSettings, defaultRoomName } from './RoomSettings'
 import { QUICK_CHAT } from '../mock/data'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import { fetchRoom, type FetchRoomResult } from '../rooms/roomClient'
@@ -11,11 +9,11 @@ import './WaitingRoom.css'
 /** S5 — Waiting Room. CYJ-24: renders the REAL room fetched from
  * room-authority — code, name and exactly the players in room_players. No
  * fixture fallback exists on any path: a failed or missing read renders a
- * visible error state (rule 12), never src/mock/data.ts room/player data. */
+ * visible error state (rule 12), never src/mock/data.ts room/player data.
+ * CYJ-28: the settings gear goes to the real, route-backed settings screen. */
 export default function WaitingRoom() {
   const navigate = useNavigate()
   const { roomId = '' } = useParams()
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   // Tri-state (Lobby's CYJ-23 pattern): undefined = still resolving — the
   // loading branch renders NO room data, so fixture values can never leak
@@ -92,7 +90,7 @@ export default function WaitingRoom() {
           type="button"
           className="btn btn-text"
           aria-label="Room settings"
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => navigate(`/room/${roomId}/settings`)}
         >
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
             <circle
@@ -210,15 +208,6 @@ export default function WaitingRoom() {
       >
         START GAME (host)
       </button>
-
-      {/* Host settings reopen the S3 form (spec S5) */}
-      <Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Room settings">
-        <RoomSettings
-          submitLabel="Save settings"
-          onSubmit={() => setSettingsOpen(false)}
-          defaultName={defaultRoomName(me?.display_name)}
-        />
-      </Modal>
     </main>
   )
 }

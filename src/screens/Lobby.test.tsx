@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useParams, type InitialEntry } from 'react-router-dom'
 import Lobby from './Lobby'
 import { PROFILE } from '../mock/data'
 import { SESSION_TOKEN_KEY } from '../auth/sessionToken'
@@ -25,7 +25,7 @@ const USER = {
 
 const roots: Root[] = []
 
-async function renderLobby(route: string): Promise<HTMLElement> {
+async function renderLobby(route: string | InitialEntry): Promise<HTMLElement> {
   const container = document.createElement('div')
   const root = createRoot(container)
   roots.push(root)
@@ -167,6 +167,29 @@ describe('Lobby session consumption (CYJ-8 AC #4)', () => {
     const [, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
     expect(new Headers(init.headers).get('x-cyj-session')).toBe('tok-from-callback')
     expect(container.textContent).toContain(`Hi, ${USER.display_name}!`)
+  })
+
+  // CYJ-28 review (round 2): a redirect-with-notice (router location state)
+  // landing on a URL that ALSO carries the #cyj_session fragment must render
+  // the notice after the strip effect's replace navigation — the effect
+  // preserves location.state, so the hand-off survives instead of being
+  // silently swallowed (rule 12).
+  it('survives the cyj_session fragment strip: a redirect-with-notice still renders', async () => {
+    // 200 (signed in), not 401: a 401 is the definitive signed-out state and
+    // clears the just-stored token (sessionClient), which would fight this
+    // test's storage assertion.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))),
+    )
+    const container = await renderLobby({
+      pathname: '/lobby',
+      hash: '#cyj_session=tok-from-callback',
+      state: { notice: 'Room not found.' },
+    })
+    expect(container.querySelector('.lobby-notice')?.textContent).toContain('Room not found.')
+    expect(container.querySelector('[data-testid="url-probe"]')?.textContent).not.toContain('cyj_session')
+    expect(localStorage.getItem(SESSION_TOKEN_KEY)).toBe('tok-from-callback')
   })
 
   // CYJ-16: the flag gate is retired — this flagless URL is exactly what the

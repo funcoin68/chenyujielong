@@ -191,7 +191,17 @@ export async function fetchRoom(roomId: string): Promise<FetchRoomResult> {
     r.code === '' ||
     (typeof r.name !== 'string' && r.name !== null) ||
     (r.status !== 'waiting' && r.status !== 'in_progress' && r.status !== 'closed') ||
-    typeof r.maxPlayers !== 'number'
+    typeof r.ownerId !== 'string' ||
+    r.ownerId === '' ||
+    typeof r.maxPlayers !== 'number' ||
+    // CYJ-28: the settings columns ride this response (one GET feeds both the
+    // WaitingRoom and the settings screen), so they are required here — an old
+    // function without them fails loudly as 'invalid response', never with
+    // fixture data (rule 12).
+    (r.rule !== 'strict' && r.rule !== 'homophone') ||
+    typeof r.turnSeconds !== 'number' ||
+    (r.winCondition !== 'rounds' && r.winCondition !== 'elimination') ||
+    (r.dictionary !== 'common' && r.dictionary !== 'full')
   ) {
     return { kind: 'error', message: 'game server returned an invalid response' }
   }
@@ -225,7 +235,12 @@ export async function fetchRoom(roomId: string): Promise<FetchRoomResult> {
       code: r.code,
       name: r.name,
       status: r.status,
+      ownerId: r.ownerId,
       maxPlayers: r.maxPlayers,
+      rule: r.rule,
+      turnSeconds: r.turnSeconds,
+      winCondition: r.winCondition,
+      dictionary: r.dictionary,
     },
     players: parsedPlayers,
   }
@@ -280,4 +295,58 @@ export async function closeRoom(roomId: string): Promise<CloseRoomResult> {
   }
   const detail = typeof body.error === 'string' ? `: ${body.error}` : ` (HTTP ${res.status})`
   return { kind: 'error', message: `could not close room${detail}` }
+}
+
+export type UpdateRoomResult =
+  | { kind: 'ok' }
+  | { kind: 'unauthorized' }
+  | { kind: 'forbidden' }
+  | { kind: 'error'; message: string }
+
+/**
+ * CYJ-28: persist a room's settings — host-only (the server returns 403 for
+ * non-hosts even with a valid payload, so a guest's Save can never land). Same
+ * transport as closeRoom (cookie + x-cyj-session fallback); a failure leaves
+ * the caller's form state untouched, so no edit is ever lost silently.
+ */
+export async function updateRoom(
+  roomId: string,
+  settings: RoomSettingsPayload,
+): Promise<UpdateRoomResult> {
+  if (!FUNCTIONS_URL) return { kind: 'error', message: 'game server is not configured' }
+  const token = readSessionToken()
+  let res: Response
+  try {
+    res = await fetch(`${FUNCTIONS_URL}/room-authority/update-room`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'x-cyj-session': token } : {}),
+      },
+      body: JSON.stringify({ roomId, ...settings }),
+    })
+  } catch (err) {
+    return { kind: 'error', message: `network error: ${String(err)}` }
+  }
+  if (res.status === 401) {
+    await res.body?.cancel()
+    return { kind: 'unauthorized' }
+  }
+  if (res.status === 403) {
+    await res.body?.cancel()
+    return { kind: 'forbidden' }
+  }
+  if (res.ok) {
+    await res.body?.cancel()
+    return { kind: 'ok' }
+  }
+  let body: { error?: unknown } = {}
+  try {
+    body = await res.json()
+  } catch {
+    /* non-JSON error body — fall through to the status-based message */
+  }
+  const detail = typeof body.error === 'string' ? `: ${body.error}` : ` (HTTP ${res.status})`
+  return { kind: 'error', message: `could not update room${detail}` }
 }

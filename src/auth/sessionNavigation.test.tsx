@@ -40,7 +40,20 @@ const USER = {
 // WaitingRoom's room-authority payload — includes a player row for the
 // session user so the "(you)" marker renders (identity cross-check, AC #2).
 const ROOM_PAYLOAD = {
-  room: { roomId: 'r-real-1', code: 'ZZ99ZZ', name: 'Nav Room', status: 'waiting', maxPlayers: 4 },
+  room: {
+    roomId: 'r-real-1',
+    code: 'ZZ99ZZ',
+    name: 'Nav Room',
+    status: 'waiting',
+    ownerId: 'u-1',
+    maxPlayers: 4,
+    // CYJ-28: the settings columns ride the same GET response (required in
+    // the client contract from here on).
+    rule: 'strict',
+    turnSeconds: 30,
+    winCondition: 'rounds',
+    dictionary: 'common',
+  },
   players: [
     { userId: 'u-1', name: 'Test Player', avatarUrl: null, isHost: true },
     { userId: 'u-guest', name: 'Greta Guest', avatarUrl: null, isHost: false },

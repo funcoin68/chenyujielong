@@ -25,7 +25,14 @@ const PAYLOAD = {
     code: 'ZZ99ZZ',
     name: 'Real Room',
     status: 'waiting',
+    ownerId: 'u-host',
     maxPlayers: 4,
+    // CYJ-28: the settings columns ride the same GET response (required in the
+    // client contract from here on).
+    rule: 'strict',
+    turnSeconds: 30,
+    winCondition: 'rounds',
+    dictionary: 'common',
   },
   players: [
     { userId: 'u-host', name: 'Host Han', avatarUrl: null, isHost: true },

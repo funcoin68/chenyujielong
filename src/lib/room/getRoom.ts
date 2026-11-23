@@ -14,9 +14,19 @@ export interface RoomPlayerSummary {
   isHost: boolean
 }
 
-/** The room plus its players, as rendered by the WaitingRoom screen. */
+/** The room plus its players, as rendered by the WaitingRoom screen. CYJ-28:
+ *  also carries the settings columns so the settings screen is fed by the same
+ *  single GET (one shape for both screens, rule 11). CYJ-28 review (round 1):
+ *  ownerId is the SAME field the server enforces on update-room (rooms.owner_id,
+ *  not room_players.is_host), so editability derived from it can never drift
+ *  from the authorization decision. */
 export interface RoomDetail extends ActiveRoomSummary {
+  ownerId: string
   maxPlayers: number
+  rule: 'strict' | 'homophone'
+  turnSeconds: number
+  winCondition: 'rounds' | 'elimination'
+  dictionary: 'common' | 'full'
 }
 
 /** The player rows joined from room_players + users, as PostgREST embeds them. */
@@ -54,7 +64,12 @@ export function getRoomDecision(args: {
     code: string
     name: string | null
     status: string
+    ownerId: string
     maxPlayers: number
+    rule: string
+    turnSeconds: number
+    winCondition: string
+    dictionary: string
   } | null
   players: RoomPlayerRow[]
 }): GetRoomDecision {
@@ -62,6 +77,11 @@ export function getRoomDecision(args: {
     return { status: 404, body: { error: 'room not found' } }
   }
   const status = args.room.status as RoomDetail['status']
+  // The rooms CHECK constraints guarantee these values (same discipline as
+  // status), so these casts cannot produce out-of-contract settings.
+  const rule = args.room.rule as RoomDetail['rule']
+  const winCondition = args.room.winCondition as RoomDetail['winCondition']
+  const dictionary = args.room.dictionary as RoomDetail['dictionary']
   return {
     status: 200,
     body: {
@@ -70,7 +90,12 @@ export function getRoomDecision(args: {
         code: args.room.code,
         name: args.room.name,
         status,
+        ownerId: args.room.ownerId,
         maxPlayers: args.room.maxPlayers,
+        rule,
+        turnSeconds: args.room.turnSeconds,
+        winCondition,
+        dictionary,
       },
       players: args.players.map((p) => ({
         userId: p.userId,
