@@ -124,7 +124,10 @@ async function insertRoomPlayer(roomId: string, userId: string): Promise<boolean
     body: JSON.stringify({ room_id: roomId, user_id: userId, is_host: true }),
   })
   if (!res.ok) {
-    console.error(`room-authority: host player insert failed: HTTP ${res.status} ${await res.text()}`)
+    // CYJ-24 review (round 2, security): status only — the PostgREST error
+    // body can echo constraint names/SQL detail into edge-function logs
+    // (same discipline as selectRoomWithPlayers).
+    console.error(`room-authority: host player insert failed: HTTP ${res.status}`)
     return false
   }
   return true
@@ -311,6 +314,16 @@ async function handleActiveRoom(req: Request): Promise<Response> {
 // room code is shareable by design, so no session is required. A failed
 // PostgREST lookup is a loud 500 (rule 12); a no-row is the decision layer's
 // explicit 404.
+//
+// Threat model (CYJ-24 review, security): this endpoint is unauthenticated
+// and returns every player's userId, display name, and avatar for any room
+// id. That is deliberate — room links must work for invited players without
+// a session — and is bounded by UUID unguessability (no room-id listing
+// exists; room codes are NOT accepted here). If a room-id leak ever becomes
+// realistic (referrer headers, logs, a future listing endpoint), revisit:
+// require the room code as a second factor, or authenticate. Player identity
+// is further bounded by getRoomDecision: no email ever reaches the response
+// (display_name falls back to 'Player') and avatar URLs must be https:.
 async function handleGetRoom(roomId: string): Promise<Response> {
   const headers = withCors(new Headers())
   const selected = await selectRoomWithPlayers(roomId)
