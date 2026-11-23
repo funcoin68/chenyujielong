@@ -10,6 +10,7 @@ import { activeRoomDecision } from '../../../src/lib/room/activeRoom.ts'
 import { closeRoomDecision, parseCloseRoomBody } from '../../../src/lib/room/closeRoom.ts'
 import { getRoomDecision } from '../../../src/lib/room/getRoom.ts'
 import type { RoomPlayerRow } from '../../../src/lib/room/getRoom.ts'
+import { parseUpdateRoomBody, updateRoomDecision } from '../../../src/lib/room/updateRoom.ts'
 import { resolveUserId } from '../../../src/lib/auth/session.ts'
 
 // AC: missing config must be a loud cold-start error, not a silent 500.
@@ -137,6 +138,11 @@ async function insertRoomPlayer(roomId: string, userId: string): Promise<boolean
 // players (host first) with each player's users-profile embed. roomId is
 // client-supplied, so it is encoded before interpolation (CYJ-23 precedent).
 interface RoomWithPlayersRow extends RoomRow {
+  max_players: number
+  rule: string
+  turn_seconds: number
+  win_condition: string
+  dictionary: string
   room_players: {
     user_id: string
     is_host: boolean
@@ -149,7 +155,7 @@ async function selectRoomWithPlayers(
 ): Promise<{ ok: true; row: RoomWithPlayersRow | null } | { ok: false }> {
   const res = await rest(
     `/rooms?id=eq.${encodeURIComponent(roomId)}` +
-      '&select=id,code,name,status,owner_id,max_players,room_players(user_id,is_host,users(display_name,avatar_url))&room_players.order=is_host.desc,joined_at.asc' +
+      '&select=id,code,name,status,owner_id,max_players,rule,turn_seconds,win_condition,dictionary,room_players(user_id,is_host,users(display_name,avatar_url))&room_players.order=is_host.desc,joined_at.asc' +
       '&limit=1',
   )
   if (!res.ok) {
@@ -187,8 +193,10 @@ async function lookupSession(
 const RATE_WINDOW_MS = 60_000
 const CREATE_MAX_PER_WINDOW = 5
 const CLOSE_MAX_PER_WINDOW = 10
+const UPDATE_MAX_PER_WINDOW = 10
 const createHits = new Map<string, number[]>()
 const closeHits = new Map<string, number[]>()
+const updateHits = new Map<string, number[]>()
 
 function writeThrottled(
   hits: Map<string, number[]>,
@@ -338,6 +346,12 @@ async function handleGetRoom(roomId: string): Promise<Response> {
           name: row.name,
           status: row.status,
           maxPlayers: row.max_players,
+          // CYJ-28: the settings columns ride this response so the settings
+          // screen is fed by this single GET (AC #1 forbids a second call).
+          rule: row.rule,
+          turnSeconds: row.turn_seconds,
+          winCondition: row.win_condition,
+          dictionary: row.dictionary,
         }
       : null,
     players: (row?.room_players ?? []).map(
@@ -428,6 +442,85 @@ async function handleCloseRoom(req: Request): Promise<Response> {
   return json(decision.body, 200, headers)
 }
 
+// CYJ-28: host-only settings persistence. Mirrors handleCloseRoom step for
+// step: auth boundary → parse → select → ownership decision (403 before any
+// write) → throttle (post-decision only) → PATCH with the owner predicate as
+// defense-in-depth (CYJ-23 precedent).
+async function handleUpdateRoom(req: Request): Promise<Response> {
+  const headers = withCors(new Headers())
+
+  // Auth boundary first, same as the other write routes: a session-less
+  // caller gets 401 regardless of body shape.
+  const session = await resolveUserId(
+    req.headers.get('cookie'),
+    req.headers.get('x-cyj-session'),
+    lookupSession,
+  )
+  if (session.kind !== 'ok') {
+    return json({ error: 'no session' }, 401, headers)
+  }
+  const userId = session.row.user_id
+
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return json({ error: 'request body must be JSON' }, 400, headers)
+  }
+  const parsed = parseUpdateRoomBody(body)
+  if (!parsed.ok) {
+    return json({ error: parsed.reason }, 400, headers)
+  }
+
+  const selected = await selectRoomById(parsed.roomId)
+  if (!selected.ok) {
+    console.error(`room-authority: update-room lookup failed for room ${parsed.roomId}`)
+    return json({ error: 'room lookup failed' }, 500, headers)
+  }
+  const decision = updateRoomDecision({ userId, room: selected.row, settings: parsed.settings })
+  if (decision.status !== 200) {
+    return json(decision.body, decision.status, headers)
+  }
+
+  // Same throttle discipline as close-room: only requests that passed auth,
+  // validation, and the ownership decision count against the budget.
+  if (writeThrottled(updateHits, userId, UPDATE_MAX_PER_WINDOW)) {
+    return json({ error: 'too many update requests, try again in a minute' }, 429, headers)
+  }
+
+  // Defense-in-depth: the PATCH predicate repeats the ownership check so
+  // PostgREST itself refuses the write if owner_id changed between the SELECT
+  // and the PATCH. userId is server-derived (session row), so it needs no
+  // encoding; roomId is client-supplied and is encoded above.
+  const patched = await rest(
+    `/rooms?id=eq.${encodeURIComponent(parsed.roomId)}&owner_id=eq.${userId}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        name: parsed.settings.name,
+        rule: parsed.settings.rule,
+        turn_seconds: parsed.settings.turnSeconds,
+        max_players: parsed.settings.maxPlayers,
+        win_condition: parsed.settings.winCondition,
+        dictionary: parsed.settings.dictionary,
+      }),
+    },
+  )
+  if (!patched.ok) {
+    console.error(`room-authority: update-room PATCH failed: HTTP ${patched.status}`)
+    return json({ error: 'room update failed' }, 500, headers)
+  }
+  const representation = (await patched.json()) as unknown[]
+  if (!Array.isArray(representation) || representation.length === 0) {
+    // The owner predicate matched nothing — an ownership change raced the
+    // PATCH. Loud 500 (rule 12), never a silent no-op success.
+    console.error(`room-authority: update-room PATCH matched no rows for room ${parsed.roomId}`)
+    return json({ error: 'room update failed' }, 500, headers)
+  }
+  return json(decision.body, 200, headers)
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (!configured) {
     return json({ error: 'room-authority not configured' }, 500, withCors(new Headers()))
@@ -468,5 +561,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   if (path.endsWith('/create-room')) return handleCreateRoom(req)
   if (path.endsWith('/close-room')) return handleCloseRoom(req)
+  if (path.endsWith('/update-room')) return handleUpdateRoom(req)
   return json({ error: 'not found' }, 404, withCors(new Headers()))
 })
