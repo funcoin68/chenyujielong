@@ -57,6 +57,11 @@ jobs:
           echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
           echo "Resolving conflicts on branch '$head_ref' (PR #$PR)"
 
+      - name: Git identity (ephemeral runner has none)   # fix-44, stage5 convention
+        run: |
+          git config user.name "pipeline-agent"
+          git config user.email "pipeline-agent@users.noreply.github.com"
+
       - name: Checkout PR branch + attempt merge
         id: merge
         env:
@@ -75,9 +80,17 @@ jobs:
               echo "::notice::Merged main cleanly (no conflicts) — tests + push follow."
             fi
           else
+            # fix-44: a non-zero exit is only a CONFLICT if a merge is actually
+            # in progress — clean merges can also fail (e.g. missing git
+            # identity). Without MERGE_HEAD there is nothing to resolve.
+            if [ ! -f .git/MERGE_HEAD ]; then
+              echo "FATAL: git merge died WITHOUT entering a conflicted merge state."
+              echo "Fix the cause printed above (e.g. git identity), then re-dispatch."
+              exit 1
+            fi
             git diff --name-only --diff-filter=U > /tmp/conflicts.txt
             if [ ! -s /tmp/conflicts.txt ]; then
-              echo "FATAL: merge failed without a conflicted-file list (see log above)"; exit 1
+              echo "FATAL: merge in progress but no conflicted files listed (see log above)"; exit 1
             fi
             # index freeze: blob hashes of every staged entry (incl. conflict
             # stages 1/2/3). A name-only list misses restaged content changes.
