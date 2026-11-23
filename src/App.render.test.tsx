@@ -13,7 +13,15 @@ function renderRoute(route: string): string {
   )
 }
 
-const ROUTES = ['/', '/lobby', '/room/demo', '/room/demo/play', '/room/demo/results', '/profile']
+const ROUTES = [
+  '/',
+  '/lobby',
+  '/room/demo',
+  '/room/demo/settings',
+  '/room/demo/play',
+  '/room/demo/results',
+  '/profile',
+]
 
 describe('mock-up routes render without errors (AC #3)', () => {
   it.each(ROUTES)('route %s renders a <main> landmark', (route) => {
