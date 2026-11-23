@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import Landing from './Landing'
+import { memoryStorage } from '../auth/memoryStorage'
 
 // The functions URL + anon key are baked at build time; tests provide both so
 // the flag-cyj-7 sign-in path is enabled (mirrors Lobby.test.tsx).
@@ -23,19 +24,25 @@ vi.mock('../config', () => ({
 // jsdom's window.location.assign is non-configurable, so the component
 // navigates through navigateTo() — intercepted here. AC #4's behavior
 // assertion is WHERE the browser would navigate, not the DOM API used.
-const navCalls = vi.hoisted(() => ({ urls: [] as string[] }))
+const navCalls = vi.hoisted(() => ({ urls: [] as string[], storedStates: [] as (string | null)[] }))
 vi.mock('../auth/authStart', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../auth/authStart')>()),
   navigateTo: (url: string) => {
+    // Capture the durable-storage nonce at navigation time so tests can
+    // assert it was persisted BEFORE the browser left for Google (CYJ-14).
     navCalls.urls.push(url)
+    navCalls.storedStates.push(localStorage.getItem('cyj_oauth_state'))
   },
 }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
+// The vitest jsdom env here exposes no localStorage (opaque-origin window),
+// so tests stub a deterministic in-memory Storage (shared helper).
 const roots: Root[] = []
 
 async function renderLanding(route: string): Promise<HTMLElement> {
+  vi.stubGlobal('localStorage', memoryStorage())
   const container = document.createElement('div')
   const root = createRoot(container)
   roots.push(root)
@@ -66,7 +73,68 @@ async function clickSignIn(container: HTMLElement) {
 afterEach(() => {
   for (const root of roots.splice(0)) root.unmount()
   navCalls.urls.length = 0
+  navCalls.storedStates.length = 0
   vi.unstubAllGlobals()
+})
+
+describe('Landing auth_error banner (CYJ-14 AC #3)', () => {
+  it('?auth_error=state_mismatch renders the exact AC message', async () => {
+    const container = await renderLanding('/?auth_error=state_mismatch')
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      'Sign-in failed (state_mismatch). Please try again.',
+    )
+    // no sign-in attempt was made — the banner comes from the bounce alone
+    expect(navCalls.urls).toEqual([])
+  })
+})
+
+describe('Landing Google sign-in (CYJ-14 AC #1)', () => {
+  it('flag on: persists the OAuth state nonce to durable storage BEFORE navigating to Google', async () => {
+    const googleUrl =
+      'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&redirect_uri=https%3A%2F%2Fapp.example%2Fauth%2Fcallback&state=abc'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify({ redirect: googleUrl }), { status: 200 })),
+      ),
+    )
+    const container = await renderLanding('/?flags=flag-cyj-7')
+
+    await clickSignIn(container)
+
+    // AC #1: the nonce is in localStorage at the moment navigateTo fires,
+    // and it survives after — durable across the Google round-trip.
+    expect(navCalls.storedStates).toEqual(['abc'])
+    expect(localStorage.getItem('cyj_oauth_state')).toBe('abc')
+    expect(navCalls.urls).toEqual([googleUrl])
+  })
+
+  // Review round 1: localStorage.setItem can throw (storage-disabled contexts,
+  // Safari private mode) — sign-in must degrade to the cookie-only flow and
+  // still navigate to Google, not show the failure banner.
+  it('flag on: storage failure still navigates to Google with no error banner', async () => {
+    const googleUrl =
+      'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&redirect_uri=https%3A%2F%2Fapp.example%2Fauth%2Fcallback&state=abc'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify({ redirect: googleUrl }), { status: 200 })),
+      ),
+    )
+    const container = await renderLanding('/?flags=flag-cyj-7')
+    // Replace the working stub with one whose setItem throws (QuotaExceeded).
+    const failing = memoryStorage()
+    failing.setItem = () => {
+      throw new DOMException('quota exceeded', 'QuotaExceededError')
+    }
+    vi.stubGlobal('localStorage', failing)
+
+    await clickSignIn(container)
+
+    expect(navCalls.urls).toEqual([googleUrl])
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
 })
 
 describe('Landing Google sign-in (CYJ-10 AC #4)', () => {

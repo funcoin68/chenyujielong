@@ -84,6 +84,12 @@ export interface CallbackDecision {
 export interface CallbackInput {
   query: URLSearchParams
   stateCookie: string | undefined
+  /**
+   * CYJ-14: the client-verified state from durable client storage
+   * (localStorage), sent as the `stored` query param when the browser
+   * blocked the third-party state cookie. Cookie-first when both arrive.
+   */
+  storedState?: string
   /** Verified ID-token claims, or null when verification failed. */
   claims: GoogleClaims | null
   appBaseUrl: string
@@ -113,11 +119,15 @@ export async function handleCallback(input: CallbackInput): Promise<CallbackDeci
     }
   }
 
-  // Anti-CSRF: the state Google echoed must match the cookie we set at start.
+  // Anti-CSRF: the state Google echoed must match the cookie we set at start,
+  // or — when third-party cookies blocked that cookie — the client-verified
+  // value from durable client storage (CYJ-14). The cookie wins when both
+  // arrive, so cookie-present behavior is unchanged.
   // CYJ-8 AC #5: failures bounce back to the app with a visible error — never
   // a raw 401 JSON page the user can't recover from.
   const state = input.query.get('state')
-  if (!state || !input.stateCookie || state !== input.stateCookie) {
+  const expected = input.stateCookie ?? input.storedState
+  if (!state || !expected || state !== expected) {
     return {
       status: 302,
       redirect: appUrl('/', 'auth_error=state_mismatch'),
