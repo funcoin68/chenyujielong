@@ -127,52 +127,34 @@ async function lookupSession(
 }
 
 // CYJ-17 review (round 1, security): bound mass room creation. The
-// one-active-room partial unique index already caps abuse per user; this
-// in-memory sliding window caps insert churn per authenticated user so a
-// fleet of accounts can't flood the rooms table. Checked only on the
-// insert path — returning an existing active room (AC #2/#3) never
-// throttles. Per-isolate, so it bounds rather than hard-limits; a
-// platform-level limit is the eventual follow-up (the auth function has
-// none either — convention noted in the review reply).
-const CREATE_WINDOW_MS = 60_000
+// one-active-room partial unique index already caps abuse per user; an
+// in-memory sliding window caps write churn per authenticated user so a
+// fleet of accounts can't flood the rooms table. Per-isolate, so it bounds
+// rather than hard-limits; a platform-level limit is the eventual follow-up
+// (the auth function has none either — convention noted in the review reply).
+// CYJ-23 review (round 2, standards): one shared sliding-window helper,
+// parameterized by hit map + ceiling — creates and closes keep INDEPENDENT
+// budgets (separate maps), but only one copy of the pattern exists.
+const RATE_WINDOW_MS = 60_000
 const CREATE_MAX_PER_WINDOW = 5
-const createHits = new Map<string, number[]>()
-
-function createThrottled(userId: string, now = Date.now()): boolean {
-  const cutoff = now - CREATE_WINDOW_MS
-  const hits = (createHits.get(userId) ?? []).filter((t) => t > cutoff)
-  if (hits.length >= CREATE_MAX_PER_WINDOW) {
-    createHits.set(userId, hits)
-    return true
-  }
-  hits.push(now)
-  createHits.set(userId, hits)
-  return false
-}
-
-// CYJ-23 review (round 2, security): close-room is a new authenticated write
-// with no limit while the sibling write carries createThrottled above. Damage
-// is bounded (owner-only, idempotent skip), but a fleet of accounts can still
-// drive repeated SELECT+PATCH churn and closed-row accumulation — so the same
-// in-memory sliding window applies. Checked only AFTER the decision layer
-// returns 200 (below), so requests that end in 400/403/404 never consume the
-// caller's budget — the round-1 position (before the lookup) let a caller
-// (or an owner retrying after a transient failure) burn the 10-per-minute
-// window on requests that change nothing. Separate map: creates and closes
-// budget independently.
-const CLOSE_WINDOW_MS = 60_000
 const CLOSE_MAX_PER_WINDOW = 10
+const createHits = new Map<string, number[]>()
 const closeHits = new Map<string, number[]>()
 
-function closeThrottled(userId: string, now = Date.now()): boolean {
-  const cutoff = now - CLOSE_WINDOW_MS
-  const hits = (closeHits.get(userId) ?? []).filter((t) => t > cutoff)
-  if (hits.length >= CLOSE_MAX_PER_WINDOW) {
-    closeHits.set(userId, hits)
+function writeThrottled(
+  hits: Map<string, number[]>,
+  userId: string,
+  maxPerWindow: number,
+  now = Date.now(),
+): boolean {
+  const cutoff = now - RATE_WINDOW_MS
+  const recent = (hits.get(userId) ?? []).filter((t) => t > cutoff)
+  if (recent.length >= maxPerWindow) {
+    hits.set(userId, recent)
     return true
   }
-  hits.push(now)
-  closeHits.set(userId, hits)
+  recent.push(now)
+  hits.set(userId, recent)
   return false
 }
 
@@ -223,7 +205,7 @@ async function handleCreateRoom(req: Request): Promise<Response> {
     return json(createRoomDecision({ userId, room: existing.row }).body, 200, headers)
   }
 
-  if (createThrottled(userId)) {
+  if (writeThrottled(createHits, userId, CREATE_MAX_PER_WINDOW)) {
     return json({ error: 'too many rooms created, try again in a minute' }, 429, headers)
   }
 
@@ -311,20 +293,32 @@ async function handleCloseRoom(req: Request): Promise<Response> {
     return json(decision.body, decision.status, headers)
   }
 
-  // Only genuine close decisions consume the budget (see closeThrottled) —
-  // 400/403/404 above never count against the caller.
-  if (closeThrottled(userId)) {
+  // CYJ-23 review (round 2, functional): the close throttle counts only
+  // requests that passed auth, body validation, and the ownership decision —
+  // so 400/403/404 responses never drain the owner's budget and a caller
+  // hammering invalid closes can't 429 the owner out of closing their
+  // actual room for the window.
+  if (writeThrottled(closeHits, userId, CLOSE_MAX_PER_WINDOW)) {
     return json({ error: 'too many close requests, try again in a minute' }, 429, headers)
   }
 
   // Idempotent: an already-closed room skips the write (the decision layer
   // returned 200 for the owner either way).
   if (selected.row?.status !== 'closed') {
-    const patched = await rest(`/rooms?id=eq.${encodeURIComponent(parsed.roomId)}`, {
-      method: 'PATCH',
-      headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ status: 'closed' }),
-    })
+    // CYJ-23 review (round 2, security): defense-in-depth — the PATCH
+    // predicate repeats the ownership check so PostgREST itself refuses the
+    // write if owner_id changed between the SELECT and the PATCH (a stale
+    // read alone can never authorize a write). userId is server-derived
+    // (session row), so it needs no encoding; roomId is client-supplied and
+    // is encoded above.
+    const patched = await rest(
+      `/rooms?id=eq.${encodeURIComponent(parsed.roomId)}&owner_id=eq.${userId}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ status: 'closed' }),
+      },
+    )
     if (!patched.ok) {
       console.error(
         `room-authority: close-room PATCH failed: HTTP ${patched.status} ${await patched.text()}`,

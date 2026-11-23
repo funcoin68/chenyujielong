@@ -5,6 +5,7 @@
  */
 import { FUNCTIONS_URL } from '../config'
 import { readSessionToken } from '../auth/sessionToken'
+import type { ActiveRoomSummary } from '../lib/room/activeRoom.ts'
 
 export interface RoomSettingsPayload {
   name: string
@@ -71,13 +72,12 @@ export async function createRoom(settings: RoomSettingsPayload): Promise<CreateR
   return { kind: 'ok', roomId: body.roomId }
 }
 
-/** The caller's active (non-closed) room, as rendered by the Lobby section. */
-export interface ActiveRoom {
-  roomId: string
-  code: string
-  name: string | null
-  status: 'waiting' | 'in_progress' | 'closed'
-}
+/**
+ * The caller's active (non-closed) room, as rendered by the Lobby section.
+ * Alias of the shared decision-layer contract (ActiveRoomSummary) — one
+ * shape, client and Edge Function (rule 11).
+ */
+export type ActiveRoom = ActiveRoomSummary
 
 export type FetchActiveRoomResult =
   | { kind: 'ok'; room: ActiveRoom | null }

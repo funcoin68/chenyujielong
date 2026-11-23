@@ -75,11 +75,12 @@ export default function Lobby() {
   // this path is unconditional.
   const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  // CYJ-23: the "Your active room" section. null = no active room (or still
-  // resolving — the section only renders once authUser is known). A failed
-  // read is surfaced as activeRoomError (rule 12), not rendered as a false
-  // empty state.
-  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null)
+  // CYJ-23: the "Your active room" section. Tri-state (rule 12): undefined =
+  // still resolving (the fetch chains off the session read) — the section
+  // renders nothing rather than a false "No active room" flicker; null =
+  // the server affirmatively returned no active room; a failed read is
+  // surfaced as activeRoomError, never as an empty state.
+  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null | undefined>(undefined)
   const [activeRoomError, setActiveRoomError] = useState<string | null>(null)
   const [closeOpen, setCloseOpen] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
@@ -229,7 +230,7 @@ export default function Lobby() {
               <p className="lobby-active-empty" role="alert">
                 {activeRoomError}
               </p>
-            ) : (
+            ) : activeRoom === undefined ? null : (
               <p className="lobby-active-empty">No active room</p>
             )}
             {/* closeError renders only inside the confirm modal — rendering it
