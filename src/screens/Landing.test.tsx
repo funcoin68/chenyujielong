@@ -90,6 +90,18 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('Landing auth_error banner (CYJ-14 AC #3)', () => {
+  it('?auth_error=state_mismatch renders the exact AC message', async () => {
+    const container = await renderLanding('/?auth_error=state_mismatch')
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      'Sign-in failed (state_mismatch). Please try again.',
+    )
+    // no sign-in attempt was made — the banner comes from the bounce alone
+    expect(navCalls.urls).toEqual([])
+  })
+})
+
 describe('Landing Google sign-in (CYJ-14 AC #1)', () => {
   it('flag on: persists the OAuth state nonce to durable storage BEFORE navigating to Google', async () => {
     const googleUrl =
