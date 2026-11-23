@@ -3,6 +3,8 @@
 Server-authoritative game logic lives here — turn validation, room authority.
 
 - One folder per function: `supabase/functions/<name>/index.ts`
+- `verify_jwt` (and other gateway config) lives in root `supabase/config.toml`
+  under `[functions.<name>]`, not per-function.
 - Pure rule logic (idiom chain validation, scoring) belongs in `src/lib/`
   so Vitest can cover it and the frontend can reuse it; functions import the
   rules and handle transport/auth/persistence only.

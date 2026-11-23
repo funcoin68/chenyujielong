@@ -38,7 +38,7 @@ migrations via `supabase db diff` only, never hand-edited after apply
 - POST /functions/v1/validate-move — body {previousIdiom: string, move: string}.
   200 {valid:true} · 400 {valid:false, reason} (bad input OR chain violation —
   both are 400, never 500) · 405 non-POST · 413 body >1KB.
-  JWT-pinned (supabase/functions/validate-move/config.toml verify_jwt=true).
+  JWT-pinned (root supabase/config.toml [functions.validate-move] verify_jwt=true).
 - Frontend routes (spec §3): / Landing · /lobby · /room/:roomId WaitingRoom ·
   /room/:roomId/play Gameplay · /room/:roomId/results Results · /profile ·
   * → Landing. AppRoutes is exported separately so tests mount MemoryRouter.
