@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import Lobby from './Lobby'
 import { PROFILE } from '../mock/data'
 import { SESSION_TOKEN_KEY } from '../auth/sessionToken'
@@ -44,6 +44,54 @@ async function renderLobby(route: string): Promise<HTMLElement> {
     for (let i = 0; i < 10; i++) await Promise.resolve()
   })
   return container
+}
+
+// Route-aware harness for the CYJ-17 tests: navigation to /room/:roomId is
+// asserted via the marker this route renders.
+function RoomPage() {
+  const { roomId } = useParams()
+  return <div data-testid="room-page">ROOM PAGE {roomId}</div>
+}
+
+async function renderLobbyWithRoutes(route: string): Promise<HTMLElement> {
+  const container = document.createElement('div')
+  const root = createRoot(container)
+  roots.push(root)
+  await act(async () => {
+    root.render(
+      <MemoryRouter initialEntries={[route]}>
+        <Routes>
+          <Route path="/lobby" element={<Lobby />} />
+          <Route path="/room/:roomId" element={<RoomPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+  })
+  return container
+}
+
+function findButton(container: HTMLElement, text: string): HTMLButtonElement {
+  const button = Array.from(container.querySelectorAll('button')).find((b) =>
+    b.textContent?.includes(text),
+  )
+  if (!button) throw new Error(`button "${text}" not found`)
+  return button
+}
+
+async function openCreateModalAndSubmit(container: HTMLElement): Promise<void> {
+  // First click opens the modal (the "+ Create Room" trigger). Once open,
+  // the form's submit button is the one inside the modal's <form>.
+  await act(async () => {
+    findButton(container, 'Create Room').click()
+  })
+  // The submit button click does not run form-submission steps in this
+  // detached jsdom container, so dispatch a bubbling submit event directly
+  // (the component calls preventDefault, so no real navigation happens).
+  const form = container.querySelector('form.room-settings')
+  if (!form) throw new Error('create-room form not found')
+  await act(async () => {
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
 }
 
 function UrlProbe() {
@@ -123,5 +171,87 @@ describe('Lobby session consumption (CYJ-8 AC #4)', () => {
     const [, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
     expect(new Headers(init.headers).get('x-cyj-session')).toBe('tok-from-callback')
     expect(container.textContent).toContain(`Hi, ${USER.display_name}!`)
+  })
+})
+
+describe('Lobby create room (CYJ-17)', () => {
+  // CYJ-17 review (round 1): the flag gate is retired — the real create-room
+  // path is unconditional, so these render the flagless /lobby route exactly
+  // as the OAuth callback produces it.
+
+  // Dispatches by URL: /auth/me answers the CYJ-7 session fetch, the
+  // create-room endpoint answers with the per-test handler.
+  function stubFetch(createRoomHandler: (init?: RequestInit) => Promise<Response>) {
+    const createCalls: { url: string; init?: RequestInit }[] = []
+    const fetchMock = vi.fn((url: string | URL, init?: RequestInit) => {
+      const urlString = String(url)
+      if (urlString.endsWith('/room-authority/create-room')) {
+        createCalls.push({ url: urlString, init })
+        return createRoomHandler(init)
+      }
+      return Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return { fetchMock, createCalls }
+  }
+
+  it('200: POSTs to room-authority/create-room and navigates to /room/:roomId', async () => {
+    const { createCalls } = stubFetch(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ roomId: 'r-new-1', code: 'AB23CD', alreadyExisted: false }), {
+          status: 200,
+        }),
+      ),
+    )
+    const container = await renderLobbyWithRoutes('/lobby')
+    await openCreateModalAndSubmit(container)
+
+    expect(createCalls).toHaveLength(1)
+    const body = JSON.parse(String(createCalls[0].init?.body))
+    expect(body).toMatchObject({ rule: 'strict', turnSeconds: 30, maxPlayers: 4 })
+    expect(container.querySelector('[data-testid="room-page"]')?.textContent).toBe('ROOM PAGE r-new-1')
+    // navigation closed the modal
+    expect(container.querySelector('form.room-settings')).toBeNull()
+  })
+
+  it('existing active room 200: navigates to the returned (existing) room id', async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ roomId: 'r-existing', code: 'K7M2QP', alreadyExisted: true }), {
+          status: 200,
+        }),
+      ),
+    )
+    const container = await renderLobbyWithRoutes('/lobby')
+    await openCreateModalAndSubmit(container)
+    expect(container.querySelector('[data-testid="room-page"]')?.textContent).toBe(
+      'ROOM PAGE r-existing',
+    )
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('401: shows a visible sign-in error, does not navigate, sends exactly one create request', async () => {
+    const { createCalls } = stubFetch(() =>
+      Promise.resolve(new Response('{"error":"no session"}', { status: 401 })),
+    )
+    const container = await renderLobbyWithRoutes('/lobby')
+    await openCreateModalAndSubmit(container)
+
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('sign in')
+    expect(container.querySelector('[data-testid="room-page"]')).toBeNull()
+    // the only writer is the Edge Function — one attempt, no retry, no row
+    expect(createCalls).toHaveLength(1)
+  })
+
+  it('network rejection: shows a visible error and does not navigate', async () => {
+    stubFetch(() => Promise.reject(new Error('connection refused')))
+    const container = await renderLobbyWithRoutes('/lobby')
+    await openCreateModalAndSubmit(container)
+
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toBeTruthy()
+    expect(alert?.textContent).not.toContain('sign in')
+    expect(container.querySelector('[data-testid="room-page"]')).toBeNull()
   })
 })

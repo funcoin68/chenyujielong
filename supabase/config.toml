@@ -9,3 +9,7 @@ verify_jwt = false
 # Read-only but must stay JWT-gated — pin explicitly so a gateway default
 # change can't silently open it.
 verify_jwt = true
+[functions.room-authority]
+# Authenticates via the session cookie (same rationale as the auth pin
+# above); the gateway JWT would reject cookie-only requests.
+verify_jwt = false

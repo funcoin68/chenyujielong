@@ -12,6 +12,7 @@ import {
   clearStateCookie,
   parseCookies,
   resolveSessionToken,
+  resolveUserId,
 } from './session'
 
 describe('session tokens', () => {
@@ -80,6 +81,38 @@ describe('resolveSessionToken (CYJ-15: cookie ?? x-cyj-session fallback, AC #2/#
     expect(resolveSessionToken(null, null)).toBeNull()
     // A cookie header without the session cookie still falls through to the header.
     expect(resolveSessionToken('other=1', null)).toBeNull()
+  })
+})
+
+describe('resolveUserId (CYJ-17 review round 1: one home for token -> user resolution)', () => {
+  const future = new Date(Date.now() + 60_000).toISOString()
+
+  it('hashes the cookie token and returns the live row’s user_id', async () => {
+    const token = generateSessionToken()
+    const expectedHash = await hashSessionToken(token)
+    const lookup = async (tokenHash: string) => {
+      expect(tokenHash).toBe(expectedHash)
+      return { user_id: 'u-1', expires_at: future }
+    }
+    await expect(resolveUserId(`${SESSION_COOKIE}=${token}`, lookup)).resolves.toBe('u-1')
+  })
+
+  it('never calls the lookup without a session cookie', async () => {
+    const lookup = () => {
+      throw new Error('lookup must not run without a token')
+    }
+    await expect(resolveUserId(null, lookup)).resolves.toBeNull()
+    await expect(resolveUserId('other=1', lookup)).resolves.toBeNull()
+  })
+
+  it('maps a missing row or an expired session to null (the caller’s 401 contract)', async () => {
+    await expect(
+      resolveUserId(`${SESSION_COOKIE}=tok`, async () => null),
+    ).resolves.toBeNull()
+    const past = new Date(Date.now() - 1000).toISOString()
+    await expect(
+      resolveUserId(`${SESSION_COOKIE}=tok`, async () => ({ user_id: 'u-1', expires_at: past })),
+    ).resolves.toBeNull()
   })
 })
 

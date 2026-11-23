@@ -3,10 +3,11 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CodeInput } from '../ui/CodeInput'
 import { Modal } from '../ui/Modal'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
-import { RoomSettings } from './RoomSettings'
+import { RoomSettings, type RoomSettingsValues } from './RoomSettings'
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import { saveSessionToken } from '../auth/sessionToken'
+import { createRoom } from '../rooms/roomClient'
 import './Lobby.css'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -52,6 +53,31 @@ export default function Lobby() {
     }
   }, [])
   const displayName = authUser?.display_name ?? PROFILE.name
+
+  // CYJ-17: real create-room through the room-authority Edge Function. The
+  // backend is live, so the flag gate is retired (same rollout as CYJ-16) —
+  // this path is unconditional.
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const submitCreate = async (settings: RoomSettingsValues) => {
+    if (creating) return
+    setCreating(true)
+    setCreateError(null)
+    try {
+      const result = await createRoom(settings)
+      if (result.kind === 'ok') {
+        setCreateOpen(false)
+        navigate(`/room/${result.roomId}`)
+      } else if (result.kind === 'unauthorized') {
+        // AC #4: visible sign-in error, no navigation.
+        setCreateError('Please sign in to create a room.')
+      } else {
+        setCreateError(result.message)
+      }
+    } finally {
+      setCreating(false)
+    }
+  }
 
   return (
     <main className="lobby">
@@ -167,7 +193,15 @@ export default function Lobby() {
 
       {/* S3 — Create Room modal */}
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Create Room">
-        <RoomSettings submitLabel="Create Room" onSubmit={() => navigate(`/room/${ROOM.id}`)} />
+        {createError && (
+          <p className="lobby-create-error" role="alert">
+            {createError}
+          </p>
+        )}
+        <RoomSettings
+          submitLabel={creating ? 'Creating…' : 'Create Room'}
+          onSubmit={submitCreate}
+        />
       </Modal>
 
       {/* S4 — Join with Code modal */}
