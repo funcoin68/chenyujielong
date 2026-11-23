@@ -17,7 +17,12 @@ def _load_fm(raw):
     lines = raw.strip().splitlines()
     while lines and lines[0].strip() == "---": lines.pop(0)
     while lines and lines[-1].strip() == "---": lines.pop()
-    docs = [d for d in yaml.safe_load_all("\n".join(lines)) if isinstance(d, dict)]
+    try:
+        docs = [d for d in yaml.safe_load_all("\n".join(lines)) if isinstance(d, dict)]
+    except yaml.YAMLError:
+        # fix-45: a non-YAML line inside the fm (prose mistaken for fm, drifted
+        # shape) used to crash with an uncaught ScannerError/ComposerError.
+        docs = []  # empty fm; the guard below reports WITH A FULL DUMP.
     fm = {}
     for d in docs:
         fm.update(d)
@@ -35,9 +40,15 @@ def parse_proposal(text):
             fm = _load_fm(fence.group(1))
             body = body[fence.end():].strip()
         else:
-            end = body.index("\n---", 3)
-            fm = _load_fm(body[3:end])
-            body = body[end+4:].strip()
+            end = body.find("\n---", 3)   # fix-45: find, never raise
+            if end == -1:
+                # No closing delimiter: parse best-effort, leave body empty so
+                # the guard below fires WITH A FULL DUMP (was: ValueError).
+                fm = _load_fm(body[3:])
+                body = ""
+            else:
+                fm = _load_fm(body[3:end])
+                body = body[end+4:].strip()
     return fm, body
 
 def is_blocked(fm):
@@ -56,17 +67,32 @@ def set_label(issue_key, label, on):
     op = "add" if on else "remove"
     jira("PUT", f"/issue/{issue_key}", {"update": {"labels": [{op: label}]}})
 
+def _dump_out(raw, out_file):
+    """bug #45: on parse failure, show what the agent ACTUALLY wrote — marker
+    drift is invisible from a bare exception. Size + first 800 chars."""
+    print(f"--- agent output dump ({out_file}: {len(raw)} bytes, first 800) ---")
+    print(raw[:800])
+    print("--- end dump ---")
+
 def main():
     out_file, args = sys.argv[1], sys.argv[2:]
     opt = {args[i]: args[i+1] for i in range(len(args)-1) if args[i].startswith("--")}
     key, rnd = opt["--ticket"], opt.get("--round", "0")
-    fm, body = parse_proposal(open(out_file).read())
+    raw = open(out_file).read()
+    try:
+        fm, body = parse_proposal(raw)
+    except SystemExit:
+        _dump_out(raw, out_file); raise
+    except Exception as e:
+        _dump_out(raw, out_file)
+        raise SystemExit(f"FATAL: failed to parse agent output ({type(e).__name__}: {e})")
     if not body.strip():
         # bug #43: jira_adf("") builds an ADF doc with content [], which Jira
         # rejects as a cryptic 400 ("Comment body can not be empty!"). Die HERE
         # with evidence instead of at the API boundary.
+        _dump_out(raw, out_file)
         raise SystemExit(f"FATAL: proposal body empty after parsing {out_file} "
-                         f"(round {rnd}, {os.path.getsize(out_file)} bytes) - markers "
+                         f"(round {rnd}, {len(raw)} bytes) - markers "
                          "found but no body text (front-matter-only output?). "
                          "Check the agent step: was the human comment in context?")
 
