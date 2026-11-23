@@ -3,6 +3,7 @@ import Landing from './screens/Landing'
 import AuthCallback from './screens/AuthCallback'
 import Lobby from './screens/Lobby'
 import WaitingRoom from './screens/WaitingRoom'
+import RoomSettingsScreen from './screens/RoomSettingsScreen'
 import Gameplay from './screens/Gameplay'
 import Results from './screens/Results'
 import Profile from './screens/Profile'
@@ -15,6 +16,7 @@ export function AppRoutes() {
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/lobby" element={<Lobby />} />
       <Route path="/room/:roomId" element={<WaitingRoom />} />
+      <Route path="/room/:roomId/settings" element={<RoomSettingsScreen />} />
       <Route path="/room/:roomId/play" element={<Gameplay />} />
       <Route path="/room/:roomId/results" element={<Results />} />
       <Route path="/profile" element={<Profile />} />

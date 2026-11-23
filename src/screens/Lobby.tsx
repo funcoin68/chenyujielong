@@ -70,6 +70,13 @@ export default function Lobby() {
   }, [])
   const displayName = authUser?.display_name ?? PROFILE.name
 
+  // CYJ-28: screens that redirect here (e.g. a failed room read on the
+  // settings route) hand over a one-shot notice via router location state.
+  // Safe alongside the fragment-strip effect above: that effect only replaces
+  // history when a cyj_session hash token exists, so a plain redirect's state
+  // survives.
+  const notice = (location.state as { notice?: string } | null)?.notice
+
   // CYJ-17: real create-room through the room-authority Edge Function. The
   // backend is live, so the flag gate is retired (same rollout as CYJ-16) —
   // this path is unconditional.
@@ -161,6 +168,12 @@ export default function Lobby() {
           </Link>
         </div>
       </header>
+
+      {notice && (
+        <p className="lobby-notice" role="status">
+          {notice}
+        </p>
+      )}
 
       <div className="lobby-columns">
         <section className="lobby-actions" aria-label="Actions">

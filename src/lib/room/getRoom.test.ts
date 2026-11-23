@@ -1,7 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import { getRoomDecision } from './getRoom.ts'
 
-const ROOM = { id: 'r-1', code: 'ZZ99ZZ', name: 'My room', status: 'waiting', maxPlayers: 4 }
+// CYJ-28: the settings columns ride the room row, so the decision layer maps
+// them through (one shape feeds both the WaitingRoom and the settings screen).
+const ROOM = {
+  id: 'r-1',
+  code: 'ZZ99ZZ',
+  name: 'My room',
+  status: 'waiting',
+  maxPlayers: 4,
+  rule: 'strict',
+  turnSeconds: 30,
+  winCondition: 'rounds',
+  dictionary: 'common',
+}
 
 describe('getRoomDecision', () => {
   it('maps a missing room to 404 (explicit empty state, not an error shape)', () => {
@@ -20,7 +32,17 @@ describe('getRoomDecision', () => {
     })
     expect(decision.status).toBe(200)
     expect(decision.body).toEqual({
-      room: { roomId: 'r-1', code: 'ZZ99ZZ', name: 'My room', status: 'waiting', maxPlayers: 4 },
+      room: {
+        roomId: 'r-1',
+        code: 'ZZ99ZZ',
+        name: 'My room',
+        status: 'waiting',
+        maxPlayers: 4,
+        rule: 'strict',
+        turnSeconds: 30,
+        winCondition: 'rounds',
+        dictionary: 'common',
+      },
       players: [
         { userId: 'u-1', name: 'Host', avatarUrl: 'https://x.test/a.png', isHost: true },
         { userId: 'u-2', name: 'Guest', avatarUrl: null, isHost: false },

@@ -167,6 +167,18 @@
   text-align: center;
 }
 
+/* CYJ-28: one-shot notice handed over via router state when a redirect lands
+   here (e.g. the settings screen's failed room read). */
+.lobby-notice {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--jade-green);
+  border-radius: var(--radius-chip);
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font-size: 14px;
+}
+
 /* CYJ-23: "Your active room" section — room row mirrors .lobby-room, with a
    two-button action group; the empty state is a quiet secondary line. */
 .lobby-active-row {
