@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import WaitingRoom from './WaitingRoom'
 import { ROOM, PLAYERS } from '../mock/data'
 import { memoryStorage } from '../auth/memoryStorage'
+import { invalidateSessionCache } from '../auth/sessionClient'
 
 // Same harness pattern as Lobby.test.tsx: the functions URL is baked at build
 // time, so tests provide one (production sets VITE_FUNCTIONS_URL).
@@ -82,7 +83,12 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-beforeEach(() => vi.stubGlobal('localStorage', memoryStorage()))
+beforeEach(() => {
+  vi.stubGlobal('localStorage', memoryStorage())
+  // CYJ-26: fetchCurrentUser caches per token — reset so a previous test's
+  // cache can't suppress this test's mount-time fetch.
+  invalidateSessionCache()
+})
 
 describe('WaitingRoom (CYJ-24)', () => {
   it('fetches the room id from the route param', async () => {

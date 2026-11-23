@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
 import { PROFILE } from '../mock/data'
+import { signOutClient } from '../auth/sessionClient'
 import './Profile.css'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -95,8 +96,17 @@ export default function Profile() {
         </div>
       </section>
 
-      {/* Mock: no session — sign-out just returns to the landing screen */}
-      <button type="button" className="btn btn-text profile-signout" onClick={() => navigate('/')}>
+      {/* Mock tier: no server-side revoke endpoint exists — sign-out clears
+          the client session (stored token + cached /me lookup, CYJ-26) so the
+          next navigation re-resolves from scratch, then returns to Landing. */}
+      <button
+        type="button"
+        className="btn btn-text profile-signout"
+        onClick={() => {
+          signOutClient()
+          navigate('/')
+        }}
+      >
         Sign out
       </button>
     </main>

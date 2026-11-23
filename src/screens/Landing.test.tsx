@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import Landing from './Landing'
+import { invalidateSessionCache } from '../auth/sessionClient'
 import { memoryStorage } from '../auth/memoryStorage'
 
 // The functions URL + anon key are baked at build time; tests provide both so
@@ -70,6 +71,9 @@ async function flushMicrotasks() {
 
 async function renderLanding(route: string): Promise<HTMLElement> {
   vi.stubGlobal('localStorage', memoryStorage())
+  // CYJ-26: fetchCurrentUser caches per token — reset so a previous test's
+  // cache can't suppress this test's mount-time fetch.
+  invalidateSessionCache()
   if (!(globalThis.fetch as unknown as { mock?: unknown }).mock) {
     vi.stubGlobal('fetch', defaultFetchStub())
   }
