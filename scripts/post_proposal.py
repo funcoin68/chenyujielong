@@ -61,6 +61,14 @@ def main():
     opt = {args[i]: args[i+1] for i in range(len(args)-1) if args[i].startswith("--")}
     key, rnd = opt["--ticket"], opt.get("--round", "0")
     fm, body = parse_proposal(open(out_file).read())
+    if not body.strip():
+        # bug #43: jira_adf("") builds an ADF doc with content [], which Jira
+        # rejects as a cryptic 400 ("Comment body can not be empty!"). Die HERE
+        # with evidence instead of at the API boundary.
+        raise SystemExit(f"FATAL: proposal body empty after parsing {out_file} "
+                         f"(round {rnd}, {os.path.getsize(out_file)} bytes) - markers "
+                         "found but no body text (front-matter-only output?). "
+                         "Check the agent step: was the human comment in context?")
 
     posted = jira("POST", f"/issue/{key}/comment", {"body": jira_adf(body)})
     # THE PINNING CONTRACT (PDF stage 4): gate 1 carries proposal_comment_id
