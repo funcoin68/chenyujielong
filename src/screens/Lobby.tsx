@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CodeInput } from '../ui/CodeInput'
 import { Modal } from '../ui/Modal'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
-import { RoomSettings, type RoomSettingsValues } from './RoomSettings'
+import { RoomSettings, defaultRoomName, type RoomSettingsValues } from './RoomSettings'
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import { saveSessionToken } from '../auth/sessionToken'
@@ -309,6 +309,7 @@ export default function Lobby() {
         <RoomSettings
           submitLabel={creating ? 'Creating…' : 'Create Room'}
           onSubmit={submitCreate}
+          defaultName={defaultRoomName(authUser?.display_name)}
         />
       </Modal>
 
