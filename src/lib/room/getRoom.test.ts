@@ -14,8 +14,8 @@ describe('getRoomDecision', () => {
     const decision = getRoomDecision({
       room: ROOM,
       players: [
-        { userId: 'u-1', isHost: true, displayName: 'Host', avatarUrl: 'https://x.test/a.png', email: 'h@x.test' },
-        { userId: 'u-2', isHost: false, displayName: 'Guest', avatarUrl: null, email: 'g@x.test' },
+        { userId: 'u-1', isHost: true, displayName: 'Host', avatarUrl: 'https://x.test/a.png' },
+        { userId: 'u-2', isHost: false, displayName: 'Guest', avatarUrl: null },
       ],
     })
     expect(decision.status).toBe(200)
@@ -28,22 +28,22 @@ describe('getRoomDecision', () => {
     })
   })
 
-  it('falls back to the email when display_name is null', () => {
+  it('falls back to the neutral label Player when display_name is null — never the email (PII)', () => {
     const decision = getRoomDecision({
       room: ROOM,
-      players: [{ userId: 'u-1', isHost: true, displayName: null, avatarUrl: null, email: 'h@x.test' }],
+      players: [{ userId: 'u-1', isHost: true, displayName: null, avatarUrl: null }],
     })
     expect(decision.status).toBe(200)
     const body = decision.body as { players: { name: string }[] }
-    expect(body.players[0].name).toBe('h@x.test')
+    expect(body.players[0].name).toBe('Player')
   })
 
   it('drops avatar URLs that are not https:', () => {
     const decision = getRoomDecision({
       room: ROOM,
       players: [
-        { userId: 'u-1', isHost: true, displayName: 'A', avatarUrl: 'javascript:alert(1)', email: 'a@x.test' },
-        { userId: 'u-2', isHost: false, displayName: 'B', avatarUrl: 'http://x.test/b.png', email: 'b@x.test' },
+        { userId: 'u-1', isHost: true, displayName: 'A', avatarUrl: 'javascript:alert(1)' },
+        { userId: 'u-2', isHost: false, displayName: 'B', avatarUrl: 'http://x.test/b.png' },
       ],
     })
     const body = decision.body as { players: { avatarUrl: string | null }[] }
@@ -54,7 +54,7 @@ describe('getRoomDecision', () => {
   it('keeps an https: avatar URL', () => {
     const decision = getRoomDecision({
       room: ROOM,
-      players: [{ userId: 'u-1', isHost: true, displayName: 'A', avatarUrl: 'https://x.test/a.png', email: 'a@x.test' }],
+      players: [{ userId: 'u-1', isHost: true, displayName: 'A', avatarUrl: 'https://x.test/a.png' }],
     })
     const body = decision.body as { players: { avatarUrl: string | null }[] }
     expect(body.players[0].avatarUrl).toBe('https://x.test/a.png')

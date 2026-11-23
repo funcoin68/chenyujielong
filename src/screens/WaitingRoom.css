@@ -86,17 +86,6 @@
   font-weight: 600;
 }
 
-.waiting-ready {
-  margin-left: auto;
-  color: var(--ink-secondary);
-  font-size: 14px;
-}
-
-.waiting-ready--yes {
-  color: var(--jade-green);
-  font-weight: 600;
-}
-
 .waiting-player--empty {
   border: 1px dashed var(--chain-link);
   border-radius: var(--radius-card);

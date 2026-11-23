@@ -137,7 +137,7 @@ interface RoomWithPlayersRow extends RoomRow {
   room_players: {
     user_id: string
     is_host: boolean
-    users: { display_name: string | null; avatar_url: string | null; email: string } | null
+    users: { display_name: string | null; avatar_url: string | null } | null
   }[]
 }
 
@@ -147,7 +147,7 @@ async function selectRoomWithPlayers(
   const res = await rest(
     `/rooms?id=eq.${encodeURIComponent(roomId)}` +
       '&select=id,code,name,status,owner_id,max_players,' +
-      'room_players(order=is_host.desc,joined_at.asc)(user_id,is_host,users(display_name,avatar_url,email))' +
+      'room_players(order=is_host.desc,joined_at.asc)(user_id,is_host,users(display_name,avatar_url))' +
       '&limit=1',
   )
   if (!res.ok) {
@@ -334,7 +334,6 @@ async function handleGetRoom(roomId: string): Promise<Response> {
         isHost: p.is_host,
         displayName: p.users?.display_name ?? null,
         avatarUrl: p.users?.avatar_url ?? null,
-        email: p.users?.email ?? '',
       }),
     ),
   })

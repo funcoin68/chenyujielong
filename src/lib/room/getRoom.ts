@@ -25,7 +25,6 @@ export interface RoomPlayerRow {
   isHost: boolean
   displayName: string | null
   avatarUrl: string | null
-  email: string
 }
 
 export type GetRoomDecision = {
@@ -40,8 +39,10 @@ export type GetRoomDecision = {
  * the id — an explicit 404, distinct from a failed PostgREST lookup (which the
  * transport layer surfaces as a loud 500, never as a fake "not found").
  *
- * The player name falls back to the user's email because users.display_name
- * is nullable (pack §3). Avatar URLs are accepted only over https: so a
+ * The player name falls back to the neutral 'Player' when display_name is
+ * null — never to the user's email: this endpoint is unauthenticated and
+ * room links are shared, so email (PII) must not reach the response
+ * (review round 1, security). Avatar URLs are accepted only over https: so a
  * weakened server path can never push an arbitrary scheme into <img src>
  * (same discipline as src/auth/sessionClient.ts). The rooms.status CHECK
  * constraint guarantees one of the three values, so this cast cannot produce
@@ -73,8 +74,9 @@ export function getRoomDecision(args: {
       },
       players: args.players.map((p) => ({
         userId: p.userId,
-        // display_name is nullable — email is the guaranteed identity.
-        name: p.displayName ?? p.email,
+        // display_name is nullable — fall back to a neutral label, never
+        // the email (PII) on this unauthenticated endpoint.
+        name: p.displayName ?? 'Player',
         avatarUrl: typeof p.avatarUrl === 'string' && p.avatarUrl.startsWith('https:')
           ? p.avatarUrl
           : null,
