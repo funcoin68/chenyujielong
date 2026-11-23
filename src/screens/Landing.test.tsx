@@ -7,7 +7,8 @@ import Landing from './Landing'
 import { memoryStorage } from '../auth/memoryStorage'
 
 // The functions URL + anon key are baked at build time; tests provide both so
-// the flag-cyj-7 sign-in path is enabled (mirrors Lobby.test.tsx).
+// the sign-in path is enabled (mirrors Lobby.test.tsx). CYJ-16 retired the
+// flag-cyj-7 gate — sign-in is live for all users whenever auth is configured.
 const configState = vi.hoisted(() => ({
   functionsUrl: 'https://fn.example',
   anonKey: 'anon-key-123',
@@ -70,8 +71,10 @@ async function clickSignIn(container: HTMLElement) {
   })
 }
 
-afterEach(() => {
-  for (const root of roots.splice(0)) root.unmount()
+afterEach(async () => {
+  await act(async () => {
+    for (const root of roots.splice(0)) root.unmount()
+  })
   navCalls.urls.length = 0
   navCalls.storedStates.length = 0
   vi.unstubAllGlobals()
@@ -90,7 +93,15 @@ describe('Landing auth_error banner (CYJ-14 AC #3)', () => {
 })
 
 describe('Landing Google sign-in (CYJ-14 AC #1)', () => {
-  it('flag on: persists the OAuth state nonce to durable storage BEFORE navigating to Google', async () => {
+  // CYJ-16 AC #1: with no query params at all, the Google sign-in control
+  // renders and is the real OAuth control (not the mock /lobby navigate).
+  it('renders the Google sign-in button on / with no query params', async () => {
+    const container = await renderLanding('/')
+
+    expect(container.querySelector('.landing-google')?.textContent).toContain('Sign in with Google')
+  })
+
+  it('persists the OAuth state nonce to durable storage BEFORE navigating to Google', async () => {
     const googleUrl =
       'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&redirect_uri=https%3A%2F%2Fapp.example%2Fauth%2Fcallback&state=abc'
     vi.stubGlobal(
@@ -99,7 +110,7 @@ describe('Landing Google sign-in (CYJ-14 AC #1)', () => {
         Promise.resolve(new Response(JSON.stringify({ redirect: googleUrl }), { status: 200 })),
       ),
     )
-    const container = await renderLanding('/?flags=flag-cyj-7')
+    const container = await renderLanding('/')
 
     await clickSignIn(container)
 
@@ -113,7 +124,7 @@ describe('Landing Google sign-in (CYJ-14 AC #1)', () => {
   // Review round 1: localStorage.setItem can throw (storage-disabled contexts,
   // Safari private mode) — sign-in must degrade to the cookie-only flow and
   // still navigate to Google, not show the failure banner.
-  it('flag on: storage failure still navigates to Google with no error banner', async () => {
+  it('storage failure still navigates to Google with no error banner', async () => {
     const googleUrl =
       'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&redirect_uri=https%3A%2F%2Fapp.example%2Fauth%2Fcallback&state=abc'
     vi.stubGlobal(
@@ -122,7 +133,7 @@ describe('Landing Google sign-in (CYJ-14 AC #1)', () => {
         Promise.resolve(new Response(JSON.stringify({ redirect: googleUrl }), { status: 200 })),
       ),
     )
-    const container = await renderLanding('/?flags=flag-cyj-7')
+    const container = await renderLanding('/')
     // Replace the working stub with one whose setItem throws (QuotaExceeded).
     const failing = memoryStorage()
     failing.setItem = () => {
@@ -137,33 +148,54 @@ describe('Landing Google sign-in (CYJ-14 AC #1)', () => {
   })
 })
 
+// CYJ-16 AC #3: stale preview/bookmarked URLs carrying the removed flag must
+// still render cleanly — flag parsing never throws on unknown flags.
+describe('Landing with removed flag-cyj-7 (CYJ-16 AC #3)', () => {
+  it('?flags=flag-cyj-7 renders without errors and sign-in still initiates OAuth', async () => {
+    const googleUrl = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&state=abc'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify({ redirect: googleUrl }), { status: 200 })),
+      ),
+    )
+    const container = await renderLanding('/?flags=flag-cyj-7')
+
+    await clickSignIn(container)
+
+    expect(navCalls.urls).toEqual([googleUrl])
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
+})
+
 describe('Landing Google sign-in (CYJ-10 AC #4)', () => {
-  it('flag on: clicking sign-in calls the start endpoint programmatically and navigates to the redirect it returns', async () => {
+  it('clicking sign-in calls the start endpoint programmatically and navigates to the redirect it returns', async () => {
     const googleUrl = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&state=abc'
     const fetchSpy = vi.fn(() =>
       Promise.resolve(new Response(JSON.stringify({ redirect: googleUrl }), { status: 200 })),
     )
     vi.stubGlobal('fetch', fetchSpy)
-    const container = await renderLanding('/?flags=flag-cyj-7')
+    const container = await renderLanding('/')
 
     await clickSignIn(container)
 
     // the start endpoint was hit via fetch — not via top-level navigation
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('https://fn.example/auth/google/start?flags=flag-cyj-7')
+    // CYJ-16: no flags in the URL → none appended to the start request
+    expect(url).toBe('https://fn.example/auth/google/start')
     expect((init.headers as Record<string, string>).apikey).toBe('anon-key-123')
     // ...and the browser follows the returned Google URL, never the endpoint itself
     expect(navCalls.urls).toEqual([googleUrl])
     expect(navCalls.urls[0]).not.toContain('/auth/google/start')
   })
 
-  it('flag on + endpoint failure: shows an error alert, navigates nowhere, no silent mock fallback', async () => {
+  it('endpoint failure: shows an error alert, navigates nowhere, no silent mock fallback', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.resolve(new Response('{"error":"unauthorized"}', { status: 401 }))),
     )
-    const container = await renderLanding('/?flags=flag-cyj-7')
+    const container = await renderLanding('/')
 
     await clickSignIn(container)
 
@@ -174,15 +206,22 @@ describe('Landing Google sign-in (CYJ-10 AC #4)', () => {
     expect(container.textContent).not.toContain('lobby-destination')
   })
 
-  it('flag off: router-navigates to /lobby with zero network calls', async () => {
-    const fetchSpy = vi.fn()
-    vi.stubGlobal('fetch', fetchSpy)
-    const container = await renderLanding('/')
+  // CYJ-16: the functions URL is the only remaining gate — unconfigured local
+  // dev keeps the mock /lobby navigate instead of fetching a bogus URL.
+  it('functions URL unconfigured: router-navigates to /lobby with zero network calls', async () => {
+    configState.functionsUrl = ''
+    try {
+      const fetchSpy = vi.fn()
+      vi.stubGlobal('fetch', fetchSpy)
+      const container = await renderLanding('/')
 
-    await clickSignIn(container)
+      await clickSignIn(container)
 
-    expect(fetchSpy).not.toHaveBeenCalled()
-    expect(navCalls.urls).toEqual([])
-    expect(container.textContent).toContain('lobby-destination')
+      expect(fetchSpy).not.toHaveBeenCalled()
+      expect(navCalls.urls).toEqual([])
+      expect(container.textContent).toContain('lobby-destination')
+    } finally {
+      configState.functionsUrl = 'https://fn.example'
+    }
   })
 })
