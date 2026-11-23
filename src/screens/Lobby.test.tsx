@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter, useSearchParams } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import Lobby from './Lobby'
 import { PROFILE } from '../mock/data'
 import { SESSION_TOKEN_KEY } from '../auth/sessionToken'
@@ -31,8 +31,8 @@ async function renderLobby(route: string): Promise<HTMLElement> {
     root.render(
       <MemoryRouter initialEntries={[route]}>
         <Lobby />
-        {/* CYJ-15: exposes the router's current query string so tests can
-            assert the Lobby stripped the one-shot cyj_session param. */}
+        {/* CYJ-15: exposes the router's current path+query+hash so tests can
+            assert the Lobby stripped the one-shot cyj_session fragment. */}
         <UrlProbe />
       </MemoryRouter>,
     )
@@ -41,8 +41,12 @@ async function renderLobby(route: string): Promise<HTMLElement> {
 }
 
 function UrlProbe() {
-  const [searchParams] = useSearchParams()
-  return <output data-testid="url-probe">{searchParams.toString()}</output>
+  const location = useLocation()
+  return (
+    <output data-testid="url-probe">
+      {location.pathname + location.search + location.hash}
+    </output>
+  )
 }
 
 afterEach(() => {
@@ -89,21 +93,32 @@ describe('Lobby session consumption (CYJ-8 AC #4)', () => {
   })
 
   // CYJ-15 AC #1: the sign-in success redirect carries the raw session token
-  // in the /lobby URL; the Lobby must consume it into durable storage (so
-  // sessionClient can attach it as x-cyj-session), strip it from the URL
-  // before it hits browser history, and still run the session fetch.
-  it('consumes cyj_session from the URL, stores it, strips it, and fetches /me with the header', async () => {
+  // in a #cyj_session URL fragment; the Lobby must consume it into durable
+  // storage (so sessionClient can attach it as x-cyj-session), strip it from
+  // the URL before it hits browser history, and still run the session fetch.
+  it('consumes cyj_session from the URL fragment, stores it, strips it, and fetches /me with the header', async () => {
     const spy = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 })))
     vi.stubGlobal('fetch', spy)
-    const container = await renderLobby('/lobby?flags=flag-cyj-7&cyj_session=tok-from-callback')
+    const container = await renderLobby('/lobby?flags=flag-cyj-7#cyj_session=tok-from-callback')
     // stored durably — exactly what fetchCurrentUser later attaches
     expect(localStorage.getItem(SESSION_TOKEN_KEY)).toBe('tok-from-callback')
-    // stripped from the router's current location via replaceState
+    // stripped from the router's current location via a replace navigation
     expect(container.querySelector('[data-testid="url-probe"]')?.textContent).not.toContain('cyj_session')
     // the session fetch ran, carrying the token header
     expect(spy).toHaveBeenCalled()
     const [, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
     expect(new Headers(init.headers).get('x-cyj-session')).toBe('tok-from-callback')
     expect(container.textContent).toContain(`Hi, ${USER.display_name}!`)
+  })
+
+  // Review round: with the flag off the consume effect must not persist the
+  // token — the flag's blast radius stays clean even if a fragment arrives.
+  it('with the flag off, never persists a cyj_session fragment', async () => {
+    const spy = vi.fn()
+    vi.stubGlobal('fetch', spy)
+    const container = await renderLobby('/lobby#cyj_session=tok-from-callback')
+    expect(localStorage.getItem(SESSION_TOKEN_KEY)).toBeNull()
+    expect(spy).not.toHaveBeenCalled()
+    expect(container.textContent).toContain(`Hi, ${PROFILE.name}!`)
   })
 })

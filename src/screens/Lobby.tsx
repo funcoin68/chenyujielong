@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { CodeInput } from '../ui/CodeInput'
 import { Modal } from '../ui/Modal'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
@@ -16,7 +16,8 @@ const ordinal = (n: number) => (n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3
 /** S2 — Lobby (Home). */
 export default function Lobby() {
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
   const [joinOpen, setJoinOpen] = useState(false)
   // flag-cyj-7: consume the OAuth session (CYJ-8). The callback redirect
@@ -27,21 +28,23 @@ export default function Lobby() {
   // (The FUNCTIONS_URL check lives inside fetchCurrentUser — one home.)
   const authEnabled = hasFlag('flag-cyj-7', searchParams)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
-  // CYJ-15: the sign-in success redirect hands the raw session token in the
-  // URL (flow.ts). Consume it BEFORE the session fetch, store it durably so
-  // fetchCurrentUser attaches it as the x-cyj-session header, and strip it
-  // from the URL (replaceState) before it lands in browser history — the
-  // token is a one-shot hand-off, not a bookmarkable credential. Separate
-  // from the fetch effect so stripping the param (a searchParams change)
-  // cannot retrigger the fetch.
+  // CYJ-15: the sign-in success redirect hands the raw session token in a
+  // #cyj_session URL FRAGMENT (flow.ts — a query string would leak the
+  // long-lived token into server logs/history/Referer). Consume it BEFORE
+  // the session fetch, store it durably so fetchCurrentUser attaches it as
+  // the x-cyj-session header, and strip it via a router replace before it
+  // lands in browser history — the token is a one-shot hand-off, not a
+  // bookmarkable credential. Gated on authEnabled: with the flag off the
+  // token is never persisted, keeping the flag's blast radius clean.
+  // Separate from the fetch effect so stripping the fragment (a location
+  // change) cannot retrigger the fetch.
   useEffect(() => {
-    const token = searchParams.get('cyj_session')
+    if (!authEnabled) return
+    const token = new URLSearchParams(location.hash.slice(1)).get('cyj_session')
     if (!token) return
     saveSessionToken(token)
-    const next = new URLSearchParams(searchParams)
-    next.delete('cyj_session')
-    setSearchParams(next, { replace: true })
-  }, [searchParams, setSearchParams])
+    navigate(location.pathname + location.search, { replace: true })
+  }, [authEnabled, location, navigate])
   useEffect(() => {
     if (!authEnabled) return
     let cancelled = false

@@ -1,8 +1,9 @@
 /**
  * Durable client-side storage for the raw session token (CYJ-15). The sign-in
- * success redirect carries the token in the /lobby URL (flow.ts) because the
- * HttpOnly cyj_session cookie lives on the functions domain and browsers
- * blocking third-party cookies never send it on the cross-site /auth/me
+ * success redirect carries the token in a /lobby URL fragment (flow.ts)
+ * because the HttpOnly cyj_session cookie lives on the functions domain and
+ * browsers blocking third-party cookies never send it on the cross-site
+ * /auth/me
  * fetch — localStorage survives. Client-only: deliberately NOT in src/lib/,
  * which is shared verbatim with the Deno Edge Function (onboarding pack §6).
  *

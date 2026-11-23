@@ -20,7 +20,7 @@ export interface AuthUser {
  * third-party cookies never send it on this cross-site fetch — the header
  * travels regardless (the cookie is kept as defense-in-depth for browsers
  * that allow it; the Edge Function prefers the cookie when both arrive).
- * The anon key rides in the apikey header per the CYJ-10 transport pattern
+ * The anon key rides in the apikey header per the CYJ-9 transport pattern
  * (the gateway rejects a query-param apikey).
  *
  * Any failure — no session, expired, network down — resolves to null so

@@ -270,7 +270,9 @@ describe('handleCallback — success (AC #1, AC #2)', () => {
   // sign-in (the HttpOnly cookie is on the functions domain and cross-site
   // requests never carry it), so the success redirect must hand the raw
   // session token to the app URL, where the Lobby consumes it and attaches it
-  // as the x-cyj-session header on /auth/me.
+  // as the x-cyj-session header on /auth/me. It rides in the URL FRAGMENT,
+  // never the query string — a query param would log the long-lived bearer
+  // token in server access logs, address-bar history, and Referer headers.
   it('carries the raw session token on the success redirect', async () => {
     const decision = await handleCallback({
       query: query({ code: 'c', state: 'st' }),
@@ -283,7 +285,9 @@ describe('handleCallback — success (AC #1, AC #2)', () => {
     const redirect = new URL(decision.redirect!)
     const cookie = sessionCookieValue(decision.setCookies)!
     const cookieToken = cookie.split(';')[0].slice(`${SESSION_COOKIE}=`.length)
-    expect(redirect.searchParams.get('cyj_session')).toBe(cookieToken)
+    expect(new URLSearchParams(redirect.hash.slice(1)).get('cyj_session')).toBe(cookieToken)
+    // never the query string — that is the access-log/history/Referer leak
+    expect(redirect.searchParams.get('cyj_session')).toBeNull()
     expect(redirect.pathname).toBe('/lobby')
   })
 
@@ -296,7 +300,8 @@ describe('handleCallback — success (AC #1, AC #2)', () => {
       appBaseUrl: APP,
     })
     const redirect = new URL(decision.redirect!)
-    expect(redirect.searchParams.get('cyj_session')).toBeTruthy()
+    expect(new URLSearchParams(redirect.hash.slice(1)).get('cyj_session')).toBeTruthy()
+    expect(redirect.searchParams.get('cyj_session')).toBeNull()
     expect(redirect.searchParams.get('flags')).toBe('flag-cyj-7')
   })
 
@@ -309,7 +314,9 @@ describe('handleCallback — success (AC #1, AC #2)', () => {
       claims: CLAIMS,
       appBaseUrl: APP,
     })
-    expect(new URL(decision.redirect!).searchParams.get('cyj_session')).toBeNull()
+    const failRedirect = new URL(decision.redirect!)
+    expect(failRedirect.searchParams.get('cyj_session')).toBeNull()
+    expect(failRedirect.hash).not.toContain('cyj_session')
     expect(decision.session).toBeUndefined()
   })
 
@@ -320,7 +327,9 @@ describe('handleCallback — success (AC #1, AC #2)', () => {
       claims: CLAIMS,
       appBaseUrl: APP,
     })
-    expect(new URL(decision.redirect!).searchParams.get('cyj_session')).toBeNull()
+    const failRedirect = new URL(decision.redirect!)
+    expect(failRedirect.searchParams.get('cyj_session')).toBeNull()
+    expect(failRedirect.hash).not.toContain('cyj_session')
     expect(decision.session).toBeUndefined()
   })
 
@@ -331,7 +340,9 @@ describe('handleCallback — success (AC #1, AC #2)', () => {
       claims: null,
       appBaseUrl: APP,
     })
-    expect(new URL(decision.redirect!).searchParams.get('cyj_session')).toBeNull()
+    const failRedirect = new URL(decision.redirect!)
+    expect(failRedirect.searchParams.get('cyj_session')).toBeNull()
+    expect(failRedirect.hash).not.toContain('cyj_session')
     expect(decision.session).toBeUndefined()
   })
 
