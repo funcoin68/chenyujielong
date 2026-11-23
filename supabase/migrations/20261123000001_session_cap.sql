@@ -35,11 +35,16 @@ begin
 end;
 $$;
 
--- The function deletes rows, so don't leave EXECUTE to PUBLIC by default:
--- only the trigger (running as the function owner) and the service role
--- (the auth Edge Function) should be able to invoke it directly.
+-- The function deletes rows, so don't leave EXECUTE to PUBLIC by default.
+-- This only guards direct ad-hoc invocation: trigger firing never checks
+-- EXECUTE grants, and the function is SECURITY INVOKER (not DEFINER), so
+-- the trigger's DELETE runs with the inserting role's privileges. That is
+-- safe here because the sole writer of public.sessions is the auth Edge
+-- Function's service role (RLS is enabled with no policies, so nothing
+-- else can INSERT at all), and the service role holds DELETE. A role with
+-- INSERT but without DELETE would fail closed (sign-in errors, no
+-- partial eviction).
 revoke execute on function public.enforce_session_cap() from public;
-grant execute on function public.enforce_session_cap() to service_role;
 
 create trigger sessions_enforce_cap
   after insert on public.sessions
