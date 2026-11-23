@@ -21,7 +21,7 @@ const USER = {
 }
 
 function mockFetch(impl: () => Promise<Response>) {
-  const spy = vi.fn(impl)
+  const spy = vi.fn<typeof fetch>(impl)
   vi.stubGlobal('fetch', spy)
   return spy
 }
