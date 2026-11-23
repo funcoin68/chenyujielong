@@ -53,8 +53,16 @@ export default function Lobby() {
       // successful session resolution, never fired for anonymous visitors.
       if (!user) return
       const result = await fetchActiveRoom()
-      if (cancelled || result.kind !== 'ok') return
-      setActiveRoom(result.room)
+      if (cancelled) return
+      if (result.kind === 'ok') {
+        setActiveRoom(result.room)
+      } else if (result.kind === 'unauthorized') {
+        // Session expired between the /auth/me read and this fetch — surface
+        // it (rule 12), never render a false "No active room".
+        setActiveRoomError('Please sign in to view your active room.')
+      } else {
+        setActiveRoomError(result.message)
+      }
     })
     return () => {
       cancelled = true
@@ -68,11 +76,20 @@ export default function Lobby() {
   const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   // CYJ-23: the "Your active room" section. null = no active room (or still
-  // resolving — the section only renders once authUser is known).
+  // resolving — the section only renders once authUser is known). A failed
+  // read is surfaced as activeRoomError (rule 12), not rendered as a false
+  // empty state.
   const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null)
+  const [activeRoomError, setActiveRoomError] = useState<string | null>(null)
   const [closeOpen, setCloseOpen] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
   const [closing, setClosing] = useState(false)
+  // Dismissing the modal clears any leftover error so a stale forbidden/500
+  // message never survives into the next open.
+  const dismissCloseModal = () => {
+    setCloseError(null)
+    setCloseOpen(false)
+  }
   const submitClose = async () => {
     if (!activeRoom || closing) return
     setClosing(true)
@@ -208,14 +225,15 @@ export default function Lobby() {
                   </button>
                 </div>
               </div>
+            ) : activeRoomError ? (
+              <p className="lobby-active-empty" role="alert">
+                {activeRoomError}
+              </p>
             ) : (
               <p className="lobby-active-empty">No active room</p>
             )}
-            {closeError && (
-              <p className="lobby-create-error" role="alert">
-                {closeError}
-              </p>
-            )}
+            {/* closeError renders only inside the confirm modal — rendering it
+                here too would double the role="alert" while the modal is open. */}
           </section>
         )}
 
@@ -298,7 +316,7 @@ export default function Lobby() {
       </Modal>
 
       {/* CYJ-23 — Close room confirm */}
-      <Modal open={closeOpen} onClose={() => setCloseOpen(false)} title="Close room?">
+      <Modal open={closeOpen} onClose={dismissCloseModal} title="Close room?">
         <p className="lobby-close-confirm">
           Closing this room ends it for everyone. The room code will stop working.
         </p>
@@ -308,7 +326,7 @@ export default function Lobby() {
           </p>
         )}
         <div className="lobby-secondary">
-          <button type="button" className="btn btn-outline" onClick={() => setCloseOpen(false)}>
+          <button type="button" className="btn btn-outline" onClick={dismissCloseModal}>
             Cancel
           </button>
           <button type="button" className="btn btn-primary" disabled={closing} onClick={submitClose}>

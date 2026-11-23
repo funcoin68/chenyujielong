@@ -66,7 +66,12 @@ async function selectActiveRoom(userId: string): Promise<SelectResult> {
 }
 
 async function selectRoomById(roomId: string): Promise<SelectResult> {
-  const res = await rest(`/rooms?id=eq.${roomId}&select=id,code,name,status,owner_id&limit=1`)
+  // CYJ-23 review (round 1, security): roomId is client-supplied — encode it
+  // before interpolating into the PostgREST query string (the PATCH path
+  // below reuses the same encoding).
+  const res = await rest(
+    `/rooms?id=eq.${encodeURIComponent(roomId)}&select=id,code,name,status,owner_id&limit=1`,
+  )
   if (!res.ok) {
     console.error(`room-authority: room lookup failed: HTTP ${res.status}`)
     return { ok: false }
@@ -142,6 +147,28 @@ function createThrottled(userId: string, now = Date.now()): boolean {
   }
   hits.push(now)
   createHits.set(userId, hits)
+  return false
+}
+
+// CYJ-23 review (round 1, security): close-room is a new authenticated write
+// with no limit while the sibling write carries createThrottled above. Damage
+// is bounded (owner-only, idempotent skip), but a fleet of accounts can still
+// drive repeated SELECT+PATCH churn and closed-row accumulation — so the same
+// in-memory sliding window applies, checked before the lookup so the SELECT
+// churn is capped too. Separate map: creates and closes budget independently.
+const CLOSE_WINDOW_MS = 60_000
+const CLOSE_MAX_PER_WINDOW = 10
+const closeHits = new Map<string, number[]>()
+
+function closeThrottled(userId: string, now = Date.now()): boolean {
+  const cutoff = now - CLOSE_WINDOW_MS
+  const hits = (closeHits.get(userId) ?? []).filter((t) => t > cutoff)
+  if (hits.length >= CLOSE_MAX_PER_WINDOW) {
+    closeHits.set(userId, hits)
+    return true
+  }
+  hits.push(now)
+  closeHits.set(userId, hits)
   return false
 }
 
@@ -270,6 +297,10 @@ async function handleCloseRoom(req: Request): Promise<Response> {
     return json({ error: parsed.reason }, 400, headers)
   }
 
+  if (closeThrottled(userId)) {
+    return json({ error: 'too many close requests, try again in a minute' }, 429, headers)
+  }
+
   const selected = await selectRoomById(parsed.roomId)
   if (!selected.ok) {
     console.error(`room-authority: close-room lookup failed for room ${parsed.roomId}`)
@@ -283,7 +314,7 @@ async function handleCloseRoom(req: Request): Promise<Response> {
   // Idempotent: an already-closed room skips the write (the decision layer
   // returned 200 for the owner either way).
   if (selected.row?.status !== 'closed') {
-    const patched = await rest(`/rooms?id=eq.${parsed.roomId}`, {
+    const patched = await rest(`/rooms?id=eq.${encodeURIComponent(parsed.roomId)}`, {
       method: 'PATCH',
       headers: { Prefer: 'return=representation' },
       body: JSON.stringify({ status: 'closed' }),

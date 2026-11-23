@@ -194,6 +194,12 @@ describe('Lobby create room (CYJ-17)', () => {
         createCalls.push({ url: urlString, init })
         return createRoomHandler(init)
       }
+      // CYJ-23: the Lobby now also reads the active room for a signed-in
+      // user — answer it with the normal empty state so the create-flow
+      // assertions stay about create-room.
+      if (urlString.endsWith('/room-authority/active-room')) {
+        return Promise.resolve(new Response('{"room":null}', { status: 200 }))
+      }
       return Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -363,7 +369,7 @@ describe('Lobby active room (CYJ-23)', () => {
     expect(section?.textContent).not.toContain(ACTIVE_ROOM.code)
   })
 
-  it('close forbidden: shows an alert and the room row is still rendered', async () => {
+  it('close forbidden: shows an alert in the modal and the room row is still rendered', async () => {
     stubFetch({
       closeRoom: () =>
         Promise.resolve(new Response('{"error":"not the room owner"}', { status: 403 })),
@@ -373,6 +379,20 @@ describe('Lobby active room (CYJ-23)', () => {
 
     const section = container.querySelector('[aria-labelledby="lobby-active-heading"]')
     expect(section?.textContent).toContain(ACTIVE_ROOM.code)
+    // The error renders only inside the confirm modal — never duplicated in
+    // the section behind it.
+    expect(section?.querySelector('[role="alert"]')).toBeNull()
+    const dialog = container.querySelector('[role="dialog"]')
+    expect(dialog?.querySelector('[role="alert"]')?.textContent).toBeTruthy()
+  })
+
+  it('active-room read failure: surfaces an alert instead of a false empty state', async () => {
+    stubFetch({
+      activeRoom: () => Promise.resolve(new Response('{"error":"lookup failed"}', { status: 500 })),
+    })
+    const container = await renderLobbyWithRoutes('/lobby')
+    const section = container.querySelector('[aria-labelledby="lobby-active-heading"]')
+    expect(section?.textContent).not.toContain('No active room')
     expect(section?.querySelector('[role="alert"]')?.textContent).toBeTruthy()
   })
 })
