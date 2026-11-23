@@ -30,7 +30,13 @@ def _load_fm(raw):
 
 def parse_proposal(text):
     m = re.search(r"---PROPOSAL-START---(.*?)---PROPOSAL-END---", text, re.S)
-    if not m: raise SystemExit("FATAL: no PROPOSAL markers in agent output")
+    if not m:
+        # bug #48: name the drift instead of making a human diff the dump.
+        near = sorted(set(re.findall(r"\S*PROPOSAL\S*", text)))
+        raise SystemExit("FATAL: no PROPOSAL markers in agent output"
+                         + (f" — near-miss tokens found: {near}"
+                            " (agent used a drifted marker shape? fix the instructions"
+                            " or extend parse_proposal)" if near else ""))
     body = m.group(1).strip()
     fm = {}
     fence = re.match(r"```ya?ml\s*\n(.*?)\n```", body, re.S)

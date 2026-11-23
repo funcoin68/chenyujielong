@@ -14,9 +14,14 @@ edit files, create branches, or push. Do not attempt to bypass this.
 
 ## Procedure
 1. Restate the task in your own words. If the AC are missing or contradictory,
-   STOP: post clarifying questions to the ticket and set status BLOCKED. Do not
-   guess silently. (Rule 1: surface, don't assume.) Maximum 3 question rounds;
-   beyond that, mark "needs human refinement" and hand back.
+   STOP and set status BLOCKED — but NEVER skip the output contract below:
+   still emit the full marked proposal block with `open_questions` filled in.
+   You are in PLAN MODE: you cannot post to the ticket yourself — the
+   orchestrator posts your marked block, open_questions included. Bare prose
+   outside the markers is UNPARSEABLE and your work is lost. (Rule 1: surface,
+   don't assume.) Maximum 3 question rounds; beyond that, set
+   `status: BLOCKED` + "needs human refinement" in the front matter and hand
+   back the same way — one marked block, always.
 2. Ground yourself: read the actual files you propose to touch. Every file you
    name in the plan must be one you opened in this session — cite path:line.
 3. Check the corpus FIRST for known pitfalls on those modules (CORRECTIONS.md,

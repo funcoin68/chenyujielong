@@ -55,6 +55,15 @@ jobs:
         run: |
           claude -p --model "${{ vars.FRONTIER_MODEL || 'kimi-for-coding' }}"             --permission-mode dontAsk --add-dir /tmp/attachments             --append-system-prompt "$(cat agent/proposal-instructions.md)"             "$(cat /tmp/context.md)" > /tmp/out.txt
 
+      - name: Upload agent output (debug evidence)
+        if: always()                    # bug #48: the parse failure lives in these bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage3-agent-output
+          path: /tmp/out.txt            # absolute path OK in v4; contains no secrets
+          retention-days: 14            # matches the pack staleness window
+          if-no-files-found: ignore
+
       - name: Post proposal / questions to JIRA
         env:
           JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
