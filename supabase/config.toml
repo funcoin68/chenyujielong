@@ -1,0 +1,11 @@
+# Gateway verify_jwt pins for all Edge Functions, in one place (CYJ-13).
+# Any function NOT listed here inherits the gateway default — add an
+# explicit [functions.<name>] section when introducing a new function.
+[functions.auth]
+# OAuth start/callback are top-level browser navigations with no Supabase
+# JWT; /auth/me authenticates via session cookie. Never gate these on JWT.
+verify_jwt = false
+[functions.validate-move]
+# Read-only but must stay JWT-gated — pin explicitly so a gateway default
+# change can't silently open it.
+verify_jwt = true

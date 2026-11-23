@@ -1,3 +1,0 @@
-# Pin the gateway default explicitly so a future config change can't silently
-# open this endpoint. validate-move is read-only but must stay JWT-gated.
-verify_jwt = true
