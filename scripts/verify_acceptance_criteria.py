@@ -1,6 +1,6 @@
 """Stage 8b: AC-by-AC verification against the staging URL. For each AC, an
 optional deterministic check command (env AC_CHECK_<n>) runs; otherwise the AC
-is marked for the k3-256k exploratory pass (workflow runs claude before this).
+is marked for the kimi-for-coding exploratory pass (workflow runs claude before this).
 Output: one evidence markdown per AC in --out dir + an index.
 Usage: verify_acceptance_criteria.py --ticket KEY --env-url URL --out /tmp/evidence/"""
 import sys, os, json, subprocess, datetime

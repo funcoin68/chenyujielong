@@ -1,3 +1,6 @@
+env:
+  CLAUDE_CODE_EFFORT_LEVEL: high
+
 # .github/workflows/stage3-respond.yml — reacts to human JIRA comments (Q&A loop)
 # v4.9 bug #35: --add-dir /tmp/attachments on the claude call. dontAsk
 # allows reads only inside WORKING DIRECTORIES; fetched Jira attachments
@@ -41,13 +44,13 @@ jobs:
           python scripts/fetch_attachments.py /tmp/ticket.json --out /tmp/attachments
           python scripts/assemble_context.py /tmp/ticket.json --with-qa > /tmp/context.md
 
-      - name: "Run agent: answer questions / revise proposal (k3, plan mode)"
+      - name: "Run agent: answer questions / revise proposal (kimi-for-coding, plan mode)"
         env:
           ANTHROPIC_BASE_URL: https://api.kimi.ai/coding
           ANTHROPIC_API_KEY: ${{ secrets.KIMI_CODE_API_KEY }}
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         run: |
-          claude -p --model "${{ vars.FRONTIER_MODEL || 'k3' }}"             --permission-mode dontAsk --add-dir /tmp/attachments             --append-system-prompt "$(cat agent/proposal-instructions.md)
+          claude -p --model "${{ vars.FRONTIER_MODEL || 'kimi-for-coding' }}"             --permission-mode dontAsk --add-dir /tmp/attachments             --append-system-prompt "$(cat agent/proposal-instructions.md)
           You are in ROUND ${{ inputs.round }} of a clarification exchange (max 3).
           The human answers since your last proposal are in the context.
           Answer remaining open questions, then post a REVISED proposal with

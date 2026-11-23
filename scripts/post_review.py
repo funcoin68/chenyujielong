@@ -59,7 +59,7 @@ def main():
         gh_comments.append({"path": c["file"], "line": int(c.get("line", 1)),
                             "side": "RIGHT", "body": f"[{c.get('severity','comment')}] {body}"})
     head_sha = get_pr(pr_no)["head"]["sha"]
-    body = (f"### Review — {persona} (clean-room, k3-256k)\n"
+    body = (f"### Review — {persona} (clean-room, kimi-for-coding)\n"
             f"```\n---REVIEW-START---\npersona: {persona}\nverdict: {v}\n"
             f"criticals: {crit}\ncomments: {len(comments)}\n")
     if raw_v and raw_v.lower() != v:
