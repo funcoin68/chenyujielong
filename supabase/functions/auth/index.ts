@@ -38,7 +38,14 @@ const CONFIG = {
   supabaseUrl: (Deno.env.get('SUPABASE_URL') ?? '').replace(/\/+$/, ''),
   serviceRoleKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 }
-const REDIRECT_URI = `${CONFIG.supabaseUrl}/functions/v1/auth/google/callback`
+// CYJ-14: the OAuth redirect lands on the APP domain (/auth/callback route)
+// instead of this function — the app validates the anti-CSRF state against
+// durable client storage (localStorage), which survives the third-party-
+// cookie blocking that broke the cross-site cyj_oauth_state cookie. Both the
+// authorize URL and the code→token exchange use this one constant, so a
+// single Google-console redirect-URI edit covers both hops. The old
+// functions-domain URI stays registered there as the rollback path.
+const REDIRECT_URI = `${CONFIG.appBaseUrl}/auth/callback`
 
 // Google's signing keys, cached per isolate (Google rotates ~daily).
 let jwksCache: { keys: JsonWebKey[]; fetchedAt: number } | null = null
@@ -135,14 +142,13 @@ async function handleGoogleCallback(req: Request): Promise<Response> {
 
   // Verify the ID token only when the callback is well-formed; every failure
   // mode funnels into handleCallback, which maps it per the AC branches.
+  // CYJ-14: the gate no longer requires the state cookie to match — blocked
+  // browsers send none, and handleCallback validates state against the cookie
+  // OR the client-supplied `stored` value. Mismatch requests still die there
+  // (state_mismatch); a burned code on a rejected request is the attacker's own.
   let claims = null
   const code = url.searchParams.get('code')
-  if (
-    !url.searchParams.get('error') &&
-    code &&
-    url.searchParams.get('state') &&
-    url.searchParams.get('state') === cookies[STATE_COOKIE]
-  ) {
+  if (!url.searchParams.get('error') && code && url.searchParams.get('state')) {
     const idToken = await exchangeCodeForIdToken(code)
     if (idToken) {
       try {
@@ -157,6 +163,7 @@ async function handleGoogleCallback(req: Request): Promise<Response> {
   const decision = await handleCallback({
     query: url.searchParams,
     stateCookie: cookies[STATE_COOKIE],
+    storedState: url.searchParams.get('stored') ?? undefined,
     claims,
     appBaseUrl: CONFIG.appBaseUrl,
   })
