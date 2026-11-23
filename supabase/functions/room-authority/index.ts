@@ -345,6 +345,10 @@ async function handleGetRoom(roomId: string): Promise<Response> {
           code: row.code,
           name: row.name,
           status: row.status,
+          // CYJ-28 review (round 1): the client derives editability from this —
+          // the same owner_id the update-room path enforces — so the two
+          // definitions of 'host' cannot drift apart.
+          ownerId: row.owner_id,
           maxPlayers: row.max_players,
           // CYJ-28: the settings columns ride this response so the settings
           // screen is fed by this single GET (AC #1 forbids a second call).

@@ -45,6 +45,7 @@ const ROOM_PAYLOAD = {
     code: 'ZZ99ZZ',
     name: 'Nav Room',
     status: 'waiting',
+    ownerId: 'u-1',
     maxPlayers: 4,
     // CYJ-28: the settings columns ride the same GET response (required in
     // the client contract from here on).

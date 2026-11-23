@@ -191,6 +191,8 @@ export async function fetchRoom(roomId: string): Promise<FetchRoomResult> {
     r.code === '' ||
     (typeof r.name !== 'string' && r.name !== null) ||
     (r.status !== 'waiting' && r.status !== 'in_progress' && r.status !== 'closed') ||
+    typeof r.ownerId !== 'string' ||
+    r.ownerId === '' ||
     typeof r.maxPlayers !== 'number' ||
     // CYJ-28: the settings columns ride this response (one GET feeds both the
     // WaitingRoom and the settings screen), so they are required here — an old
@@ -233,6 +235,7 @@ export async function fetchRoom(roomId: string): Promise<FetchRoomResult> {
       code: r.code,
       name: r.name,
       status: r.status,
+      ownerId: r.ownerId,
       maxPlayers: r.maxPlayers,
       rule: r.rule,
       turnSeconds: r.turnSeconds,

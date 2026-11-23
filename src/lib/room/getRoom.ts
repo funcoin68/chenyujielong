@@ -16,8 +16,12 @@ export interface RoomPlayerSummary {
 
 /** The room plus its players, as rendered by the WaitingRoom screen. CYJ-28:
  *  also carries the settings columns so the settings screen is fed by the same
- *  single GET (one shape for both screens, rule 11). */
+ *  single GET (one shape for both screens, rule 11). CYJ-28 review (round 1):
+ *  ownerId is the SAME field the server enforces on update-room (rooms.owner_id,
+ *  not room_players.is_host), so editability derived from it can never drift
+ *  from the authorization decision. */
 export interface RoomDetail extends ActiveRoomSummary {
+  ownerId: string
   maxPlayers: number
   rule: 'strict' | 'homophone'
   turnSeconds: number
@@ -60,6 +64,7 @@ export function getRoomDecision(args: {
     code: string
     name: string | null
     status: string
+    ownerId: string
     maxPlayers: number
     rule: string
     turnSeconds: number
@@ -85,6 +90,7 @@ export function getRoomDecision(args: {
         code: args.room.code,
         name: args.room.name,
         status,
+        ownerId: args.room.ownerId,
         maxPlayers: args.room.maxPlayers,
         rule,
         turnSeconds: args.room.turnSeconds,

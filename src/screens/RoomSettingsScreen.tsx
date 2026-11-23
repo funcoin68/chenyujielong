@@ -58,8 +58,12 @@ export default function RoomSettingsScreen() {
     )
   }
 
-  const { room, players } = result
-  const isHost = me !== null && players.some((p) => p.isHost && p.userId === me.id)
+  const { room } = result
+  // CYJ-28 review (round 1): editability is derived from room.ownerId — the
+  // SAME field the server's update-room path authorizes against — not from the
+  // players list's is_host flag, so the two definitions of 'host' can never
+  // drift (players' isHost still drives the HOST badge in the WaitingRoom).
+  const isHost = me !== null && room.ownerId === me.id
 
   const handleSubmit = async (settings: RoomSettingsValues) => {
     if (saving) return

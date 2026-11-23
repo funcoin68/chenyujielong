@@ -24,6 +24,7 @@ const PAYLOAD = {
     code: 'ZZ99ZZ',
     name: 'Real Room',
     status: 'waiting',
+    ownerId: 'u-host',
     maxPlayers: 4,
     rule: 'homophone',
     turnSeconds: 60,
@@ -230,6 +231,30 @@ describe('RoomSettingsScreen (CYJ-28)', () => {
 
     const nameInput = container.querySelector('.room-settings-name') as HTMLInputElement
     expect(nameInput.readOnly).toBe(true)
+    expect(container.querySelector('button[type="submit"]')).toBeNull()
+  })
+
+  it('AC #3: editability follows ownerId, not the players list is_host flag (review round 1)', async () => {
+    // The payload's players mark u-host as isHost — but the server authorizes
+    // by rooms.ownerId. A flagged non-owner (u-guest) must NOT see an editable
+    // form that would 403 on save.
+    const { container } = await renderSettingsScreen('/room/r-real-1/settings', {
+      me: GUEST_ME,
+      room: () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...PAYLOAD,
+              players: [
+                { userId: 'u-host', name: 'Host Han', avatarUrl: null, isHost: false },
+                { userId: 'u-guest', name: 'Greta Guest', avatarUrl: null, isHost: true },
+              ],
+            }),
+            { status: 200 },
+          ),
+        ),
+    })
+    expect((container.querySelector('.room-settings-name') as HTMLInputElement).readOnly).toBe(true)
     expect(container.querySelector('button[type="submit"]')).toBeNull()
   })
 
