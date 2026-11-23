@@ -8,6 +8,8 @@ import { createRoomDecision, parseCreateRoomBody } from '../../../src/lib/room/c
 import type { RoomSettingsInput } from '../../../src/lib/room/createRoom.ts'
 import { activeRoomDecision } from '../../../src/lib/room/activeRoom.ts'
 import { closeRoomDecision, parseCloseRoomBody } from '../../../src/lib/room/closeRoom.ts'
+import { getRoomDecision } from '../../../src/lib/room/getRoom.ts'
+import type { RoomPlayerRow } from '../../../src/lib/room/getRoom.ts'
 import { resolveUserId } from '../../../src/lib/auth/session.ts'
 
 // AC: missing config must be a loud cold-start error, not a silent 500.
@@ -108,6 +110,54 @@ async function insertRoom(
     return { row: null, conflict: false }
   }
   return { row: ((await res.json()) as RoomRow[])?.[0] ?? null, conflict: false }
+}
+
+// CYJ-24: the host's room_players row is written with the room on the create
+// path. There is no cross-PostgREST transaction, so a player-insert failure
+// after a successful room insert is surfaced loudly (rule 12) as a 500 — the
+// residual is a room whose player list is empty (visible in the WaitingRoom
+// as 0 players), never fixture data and never a silent partial success.
+async function insertRoomPlayer(roomId: string, userId: string): Promise<boolean> {
+  const res = await rest('/room_players', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ room_id: roomId, user_id: userId, is_host: true }),
+  })
+  if (!res.ok) {
+    // CYJ-24 review (round 2, security): status only — the PostgREST error
+    // body can echo constraint names/SQL detail into edge-function logs
+    // (same discipline as selectRoomWithPlayers).
+    console.error(`room-authority: host player insert failed: HTTP ${res.status}`)
+    return false
+  }
+  return true
+}
+
+// CYJ-24: one PostgREST round trip for the WaitingRoom — the room row plus its
+// players (host first) with each player's users-profile embed. roomId is
+// client-supplied, so it is encoded before interpolation (CYJ-23 precedent).
+interface RoomWithPlayersRow extends RoomRow {
+  room_players: {
+    user_id: string
+    is_host: boolean
+    users: { display_name: string | null; avatar_url: string | null } | null
+  }[]
+}
+
+async function selectRoomWithPlayers(
+  roomId: string,
+): Promise<{ ok: true; row: RoomWithPlayersRow | null } | { ok: false }> {
+  const res = await rest(
+    `/rooms?id=eq.${encodeURIComponent(roomId)}` +
+      '&select=id,code,name,status,owner_id,max_players,' +
+      'room_players(order=is_host.desc,joined_at.asc)(user_id,is_host,users(display_name,avatar_url))' +
+      '&limit=1',
+  )
+  if (!res.ok) {
+    console.error(`room-authority: room-with-players lookup failed: HTTP ${res.status}`)
+    return { ok: false }
+  }
+  return { ok: true, row: ((await res.json()) as RoomWithPlayersRow[])?.[0] ?? null }
 }
 
 // Session resolution (CYJ-7): the raw token lives in the httpOnly cookie;
@@ -211,6 +261,12 @@ async function handleCreateRoom(req: Request): Promise<Response> {
 
   const inserted = await insertRoom(userId, parsed.settings)
   if (inserted.row) {
+    // CYJ-24: the owner is the room's first player (host). A failure here
+    // leaves a room with an empty player list — loud 500 (rule 12), never a
+    // silent partial success.
+    if (!(await insertRoomPlayer(inserted.row.id, userId))) {
+      return json(createRoomDecision({ userId, room: null }).body, 500, headers)
+    }
     return json(createRoomDecision({ userId, created: inserted.row }).body, 200, headers)
   }
   if (inserted.conflict) {
@@ -251,6 +307,50 @@ async function handleActiveRoom(req: Request): Promise<Response> {
     200,
     headers,
   )
+}
+
+// CYJ-24: read-only room detail for the WaitingRoom — the room row plus
+// exactly its room_players (no fixture fallback anywhere). Public read: the
+// room code is shareable by design, so no session is required. A failed
+// PostgREST lookup is a loud 500 (rule 12); a no-row is the decision layer's
+// explicit 404.
+//
+// Threat model (CYJ-24 review, security): this endpoint is unauthenticated
+// and returns every player's userId, display name, and avatar for any room
+// id. That is deliberate — room links must work for invited players without
+// a session — and is bounded by UUID unguessability (no room-id listing
+// exists; room codes are NOT accepted here). If a room-id leak ever becomes
+// realistic (referrer headers, logs, a future listing endpoint), revisit:
+// require the room code as a second factor, or authenticate. Player identity
+// is further bounded by getRoomDecision: no email ever reaches the response
+// (display_name falls back to 'Player') and avatar URLs must be https:.
+async function handleGetRoom(roomId: string): Promise<Response> {
+  const headers = withCors(new Headers())
+  const selected = await selectRoomWithPlayers(roomId)
+  if (!selected.ok) {
+    return json({ error: 'room lookup failed' }, 500, headers)
+  }
+  const row = selected.row
+  const decision = getRoomDecision({
+    room: row
+      ? {
+          id: row.id,
+          code: row.code,
+          name: row.name,
+          status: row.status,
+          maxPlayers: row.max_players,
+        }
+      : null,
+    players: (row?.room_players ?? []).map(
+      (p): RoomPlayerRow => ({
+        userId: p.user_id,
+        isHost: p.is_host,
+        displayName: p.users?.display_name ?? null,
+        avatarUrl: p.users?.avatar_url ?? null,
+      }),
+    ),
+  })
+  return json(decision.body, decision.status, headers)
 }
 
 // CYJ-23: close (not delete) — the row stays, status becomes 'closed', and
@@ -353,6 +453,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json({ error: 'method not allowed' }, 405, withCors(new Headers()))
     }
     return handleActiveRoom(req)
+  }
+  // CYJ-24: GET /room-authority/room/<roomId> — same pattern as /active-room:
+  // routed before the POST gate, GET enforced here.
+  const roomMatch = path.match(/\/room-authority\/room\/([^/]+)$/)
+  if (roomMatch) {
+    if (req.method !== 'GET') {
+      return json({ error: 'method not allowed' }, 405, withCors(new Headers()))
+    }
+    return handleGetRoom(roomMatch[1])
   }
   if (req.method !== 'POST') {
     return json({ error: 'method not allowed' }, 405, withCors(new Headers()))

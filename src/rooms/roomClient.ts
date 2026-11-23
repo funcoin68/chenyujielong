@@ -6,6 +6,7 @@
 import { FUNCTIONS_URL } from '../config'
 import { readSessionToken } from '../auth/sessionToken'
 import type { ActiveRoomSummary } from '../lib/room/activeRoom.ts'
+import type { RoomDetail, RoomPlayerSummary } from '../lib/room/getRoom.ts'
 
 export interface RoomSettingsPayload {
   name: string
@@ -135,6 +136,99 @@ export async function fetchActiveRoom(): Promise<FetchActiveRoomResult> {
     return { kind: 'error', message: 'game server returned an invalid response' }
   }
   return { kind: 'ok', room: { roomId: room.roomId, code: room.code, name: room.name, status } }
+}
+
+export type FetchRoomResult =
+  | { kind: 'ok'; room: RoomDetail; players: RoomPlayerSummary[] }
+  | { kind: 'not-found' }
+  | { kind: 'error'; message: string }
+
+/**
+ * CYJ-24: read one room (with its players) for the WaitingRoom. Public read —
+ * the room code is shareable by design — so no session is required; the
+ * stored token still rides as x-cyj-session when present (harmless, and
+ * future-proofs the endpoint if it ever needs identity). Same transport
+ * pattern as fetchActiveRoom; a 404 is a DISTINCT result so the screen can
+ * render an explicit "Room not found." empty state (AC #5), never fixture
+ * data on any failure path.
+ */
+export async function fetchRoom(roomId: string): Promise<FetchRoomResult> {
+  if (!FUNCTIONS_URL) return { kind: 'error', message: 'game server is not configured' }
+  const token = readSessionToken()
+  let res: Response
+  try {
+    res = await fetch(`${FUNCTIONS_URL}/room-authority/room/${encodeURIComponent(roomId)}`, {
+      credentials: 'include',
+      headers: token ? { 'x-cyj-session': token } : {},
+    })
+  } catch (err) {
+    return { kind: 'error', message: `network error: ${String(err)}` }
+  }
+  if (res.status === 404) {
+    await res.body?.cancel()
+    return { kind: 'not-found' }
+  }
+  let body: { room?: unknown; players?: unknown; error?: unknown } = {}
+  try {
+    body = await res.json()
+  } catch {
+    /* non-JSON error body — fall through to the status-based message */
+  }
+  if (!res.ok) {
+    const detail = typeof body.error === 'string' ? `: ${body.error}` : ` (HTTP ${res.status})`
+    return { kind: 'error', message: `could not load room${detail}` }
+  }
+  const room = body.room
+  const players = body.players
+  if (typeof room !== 'object' || room === null || !Array.isArray(players)) {
+    return { kind: 'error', message: 'game server returned an invalid response' }
+  }
+  const r = room as Record<string, unknown>
+  if (
+    typeof r.roomId !== 'string' ||
+    r.roomId === '' ||
+    typeof r.code !== 'string' ||
+    r.code === '' ||
+    (typeof r.name !== 'string' && r.name !== null) ||
+    (r.status !== 'waiting' && r.status !== 'in_progress' && r.status !== 'closed') ||
+    typeof r.maxPlayers !== 'number'
+  ) {
+    return { kind: 'error', message: 'game server returned an invalid response' }
+  }
+  const parsedPlayers: RoomPlayerSummary[] = []
+  for (const p of players) {
+    if (typeof p !== 'object' || p === null) {
+      return { kind: 'error', message: 'game server returned an invalid response' }
+    }
+    const player = p as Record<string, unknown>
+    if (
+      typeof player.userId !== 'string' ||
+      player.userId === '' ||
+      typeof player.name !== 'string' ||
+      player.name === '' ||
+      (typeof player.avatarUrl !== 'string' && player.avatarUrl !== null) ||
+      typeof player.isHost !== 'boolean'
+    ) {
+      return { kind: 'error', message: 'game server returned an invalid response' }
+    }
+    parsedPlayers.push({
+      userId: player.userId,
+      name: player.name,
+      avatarUrl: player.avatarUrl,
+      isHost: player.isHost,
+    })
+  }
+  return {
+    kind: 'ok',
+    room: {
+      roomId: r.roomId,
+      code: r.code,
+      name: r.name,
+      status: r.status,
+      maxPlayers: r.maxPlayers,
+    },
+    players: parsedPlayers,
+  }
 }
 
 export type CloseRoomResult =

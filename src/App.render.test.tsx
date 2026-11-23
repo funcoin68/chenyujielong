@@ -43,11 +43,15 @@ describe('mock-up routes render without errors (AC #3)', () => {
     expect(html).toMatch(/aria-label="[^"]*[Nn]otifications[^"]*"/)
   })
 
-  it('waiting room shows the fixture room name and invite code', () => {
+  // CYJ-24: the WaitingRoom is fetch-driven — SSR runs no effects, so the
+  // server render is the loading state (same precedent as Landing, CYJ-19):
+  // the topbar and "Loading room…", never fixture room data.
+  it('waiting room SSR shows the loading state (fetch-driven, CYJ-24)', () => {
     const html = renderRoute(`/room/${ROOM.id}`)
-    // renderToString escapes apostrophes as &#x27;
-    expect(html).toContain(ROOM.name.replace(/'/g, '&#x27;'))
-    for (const ch of ROOM.code) expect(html).toContain(ch)
+    expect(html).toContain('Loading room')
+    expect(html).toContain('← Lobby')
+    expect(html).not.toContain(ROOM.name.replace(/'/g, '&#x27;'))
+    expect(html).not.toContain(ROOM.code)
   })
 
   it('gameplay prompts for the character derived from the fixture chain head', () => {

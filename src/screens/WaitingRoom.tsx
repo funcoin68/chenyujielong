@@ -1,24 +1,80 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Modal } from '../ui/Modal'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
 import { RoomSettings } from './RoomSettings'
-import { PLAYERS, QUICK_CHAT, ROOM } from '../mock/data'
+import { QUICK_CHAT } from '../mock/data'
+import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
+import { fetchRoom, type FetchRoomResult } from '../rooms/roomClient'
 import './WaitingRoom.css'
 
-/** S5 — Waiting Room (mock renders the host view). */
+/** S5 — Waiting Room. CYJ-24: renders the REAL room fetched from
+ * room-authority — code, name and exactly the players in room_players. No
+ * fixture fallback exists on any path: a failed or missing read renders a
+ * visible error state (rule 12), never src/mock/data.ts room/player data. */
 export default function WaitingRoom() {
   const navigate = useNavigate()
+  const { roomId = '' } = useParams()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  const emptySlots = ROOM.maxPlayers - PLAYERS.length
-  const allReady = PLAYERS.filter((p) => !p.isHost).every((p) => p.ready)
-  const waitingOn = PLAYERS.find((p) => !p.isHost && !p.ready)?.name
-  const canStart = PLAYERS.length >= 2 && allReady
+  // Tri-state (Lobby's CYJ-23 pattern): undefined = still resolving — the
+  // loading branch renders NO room data, so fixture values can never leak
+  // while the fetch is in flight.
+  const [result, setResult] = useState<FetchRoomResult | undefined>(undefined)
+  // The (you) marker needs the caller's id; resolved best-effort — a failed
+  // /auth/me just leaves the marker absent (public read, no auth required).
+  const [me, setMe] = useState<AuthUser | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchRoom(roomId).then((r) => {
+      if (!cancelled) setResult(r)
+    })
+    fetchCurrentUser().then((user) => {
+      if (!cancelled) setMe(user)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [roomId])
+
+  if (result === undefined) {
+    return (
+      <main className="waiting">
+        <header className="waiting-topbar">
+          <Link to="/lobby" className="btn btn-text">
+            ← Lobby
+          </Link>
+        </header>
+        <p>Loading room…</p>
+      </main>
+    )
+  }
+
+  if (result.kind !== 'ok') {
+    return (
+      <main className="waiting">
+        <header className="waiting-topbar">
+          <Link to="/lobby" className="btn btn-text">
+            ← Lobby
+          </Link>
+        </header>
+        <p role="alert">
+          {result.kind === 'not-found' ? 'Room not found.' : result.message}
+        </p>
+      </main>
+    )
+  }
+
+  const { room, players } = result
+  // The fixture ready-states are gone — no ready concept exists server-side
+  // (CYJ-24). Starting needs at least two real players.
+  const canStart = players.length >= 2
+  const emptySlots = Math.max(room.maxPlayers - players.length, 0)
 
   const copyCode = () => {
     try {
-      void navigator.clipboard?.writeText(ROOM.code)
+      void navigator.clipboard?.writeText(room.code)
     } catch {
       /* clipboard unavailable — the code stays visible either way */
     }
@@ -60,16 +116,16 @@ export default function WaitingRoom() {
 
       <section className="waiting-room-info" aria-labelledby="waiting-room-name">
         <h1 id="waiting-room-name" className="waiting-name">
-          {ROOM.name}
+          {room.name ?? 'Untitled room'}
         </h1>
         <button
           type="button"
           className="waiting-code"
           onClick={copyCode}
-          aria-label={`Room code ${ROOM.code.split('').join(' ')} — tap to copy`}
+          aria-label={`Room code ${room.code.split('').join(' ')} — tap to copy`}
         >
           <span className="waiting-code-label">CODE:</span>
-          {ROOM.code.split('').map((ch, i) => (
+          {room.code.split('').map((ch, i) => (
             <span key={i} className="waiting-code-char" aria-hidden="true">
               {ch}
             </span>
@@ -106,23 +162,23 @@ export default function WaitingRoom() {
 
       <section aria-labelledby="waiting-players-heading">
         <h2 id="waiting-players-heading" className="waiting-section-title">
-          Players {PLAYERS.length}/{ROOM.maxPlayers}
+          Players {players.length}/{room.maxPlayers}
         </h2>
         <ul className="waiting-player-list">
-          {PLAYERS.map((p) => (
-            <li key={p.id} className="card waiting-player">
-              <PlayerAvatar name={p.name} colorVar={p.colorVar} size={44} />
+          {players.map((p, i) => (
+            <li key={p.userId} className="card waiting-player">
+              {p.avatarUrl ? (
+                <img src={p.avatarUrl} alt="" width={44} height={44} />
+              ) : (
+                // The server sends no identity color — assign one by index,
+                // matching the Lobby header pattern (var(--player-N)).
+                <PlayerAvatar name={p.name} colorVar={`var(--player-${(i % 5) + 1})`} size={44} />
+              )}
               <span className="waiting-player-name">
                 {p.name}
-                {p.isYou && ' (you)'}
+                {me && p.userId === me.id && ' (you)'}
               </span>
               {p.isHost && <span className="chip">HOST</span>}
-              <span
-                className={`waiting-ready${p.ready ? ' waiting-ready--yes' : ''}`}
-                role="status"
-              >
-                {p.ready ? '✓ Ready' : '… thinking'}
-              </span>
             </li>
           ))}
           {Array.from({ length: emptySlots }, (_, i) => (
@@ -149,8 +205,8 @@ export default function WaitingRoom() {
         type="button"
         className="btn btn-primary btn-lg"
         disabled={!canStart}
-        title={canStart ? undefined : waitingOn ? `Waiting for ${waitingOn}…` : 'Need at least 2 players'}
-        onClick={() => navigate(`/room/${ROOM.id}/play`)}
+        title={canStart ? undefined : 'Need at least 2 players'}
+        onClick={() => navigate(`/room/${roomId}/play`)}
       >
         START GAME (host)
       </button>

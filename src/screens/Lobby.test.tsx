@@ -395,4 +395,17 @@ describe('Lobby active room (CYJ-23)', () => {
     expect(section?.textContent).not.toContain('No active room')
     expect(section?.querySelector('[role="alert"]')?.textContent).toBeTruthy()
   })
+
+  // CYJ-24: the friends-rooms section and the active-room section swapped DOM
+  // positions; content is unchanged (the CYJ-23 tests above pass unmodified).
+  it('renders the friends-rooms section before the active-room section', async () => {
+    stubFetch({})
+    const container = await renderLobbyWithRoutes('/lobby')
+    const rooms = container.querySelector('[aria-labelledby="lobby-rooms-heading"]')
+    const active = container.querySelector('[aria-labelledby="lobby-active-heading"]')
+    expect(rooms).not.toBeNull()
+    expect(active).not.toBeNull()
+    expect(rooms!.compareDocumentPosition(active!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(active!.compareDocumentPosition(rooms!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
 })
