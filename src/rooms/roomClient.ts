@@ -4,6 +4,7 @@
  * Function (onboarding pack §6).
  */
 import { FUNCTIONS_URL } from '../config'
+import { readSessionToken } from '../auth/sessionToken'
 
 export interface RoomSettingsPayload {
   name: string
@@ -22,7 +23,12 @@ export type CreateRoomResult =
 /**
  * Persist a new room owned by the signed-in user — or, if the user already
  * owns an active room, return that room's id (the server decides, AC #2).
- * The session cookie rides along (SameSite=None; Secure, CYJ-7).
+ * The session cookie rides along (SameSite=None; Secure, CYJ-7). CYJ-20: the
+ * stored token also rides as the x-cyj-session header (pattern copied from
+ * src/auth/sessionClient.ts) — browsers blocking third-party cookies never
+ * send the cross-site cookie, and the header is the only channel that
+ * reaches room-authority there; the server still prefers the cookie when
+ * both arrive.
  *
  * The "functions configured?" guard lives HERE (one home, same as
  * src/auth/sessionClient.ts): a missing FUNCTIONS_URL is a visible error,
@@ -30,12 +36,16 @@ export type CreateRoomResult =
  */
 export async function createRoom(settings: RoomSettingsPayload): Promise<CreateRoomResult> {
   if (!FUNCTIONS_URL) return { kind: 'error', message: 'game server is not configured' }
+  const token = readSessionToken()
   let res: Response
   try {
     res = await fetch(`${FUNCTIONS_URL}/room-authority/create-room`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'x-cyj-session': token } : {}),
+      },
       body: JSON.stringify(settings),
     })
   } catch (err) {

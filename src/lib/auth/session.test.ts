@@ -84,35 +84,76 @@ describe('resolveSessionToken (CYJ-15: cookie ?? x-cyj-session fallback, AC #2/#
   })
 })
 
-describe('resolveUserId (CYJ-17 review round 1: one home for token -> user resolution)', () => {
+describe('resolveUserId (CYJ-20: one shared session-resolution path for BOTH Edge Functions)', () => {
   const future = new Date(Date.now() + 60_000).toISOString()
 
-  it('hashes the cookie token and returns the live row’s user_id', async () => {
+  it('hashes the cookie token and returns the live row (kind: ok)', async () => {
     const token = generateSessionToken()
     const expectedHash = await hashSessionToken(token)
     const lookup = async (tokenHash: string) => {
       expect(tokenHash).toBe(expectedHash)
       return { user_id: 'u-1', expires_at: future }
     }
-    await expect(resolveUserId(`${SESSION_COOKIE}=${token}`, lookup)).resolves.toBe('u-1')
+    const res = await resolveUserId(`${SESSION_COOKIE}=${token}`, null, lookup)
+    expect(res.kind).toBe('ok')
+    if (res.kind === 'ok') expect(res.row.user_id).toBe('u-1')
   })
 
-  it('never calls the lookup without a session cookie', async () => {
+  it('falls back to the x-cyj-session header when no cookie arrives (CYJ-15 token rule)', async () => {
+    const token = generateSessionToken()
+    const expectedHash = await hashSessionToken(token)
+    const lookup = async (tokenHash: string) => {
+      expect(tokenHash).toBe(expectedHash)
+      return { user_id: 'u-2', expires_at: future }
+    }
+    const res = await resolveUserId(null, token, lookup)
+    expect(res.kind).toBe('ok')
+    if (res.kind === 'ok') expect(res.row.user_id).toBe('u-2')
+  })
+
+  it('prefers the cookie token when both cookie and header arrive', async () => {
+    const cookieToken = generateSessionToken()
+    const headerToken = generateSessionToken()
+    const expectedHash = await hashSessionToken(cookieToken)
+    const lookup = async (tokenHash: string) => {
+      expect(tokenHash).toBe(expectedHash)
+      return { user_id: 'u-cookie', expires_at: future }
+    }
+    const res = await resolveUserId(`${SESSION_COOKIE}=${cookieToken}`, headerToken, lookup)
+    expect(res.kind).toBe('ok')
+    if (res.kind === 'ok') expect(res.row.user_id).toBe('u-cookie')
+  })
+
+  it('never calls the lookup without any token (neither cookie nor header)', async () => {
     const lookup = () => {
       throw new Error('lookup must not run without a token')
     }
-    await expect(resolveUserId(null, lookup)).resolves.toBeNull()
-    await expect(resolveUserId('other=1', lookup)).resolves.toBeNull()
+    await expect(resolveUserId(null, null, lookup)).resolves.toEqual({ kind: 'no-session' })
+    await expect(resolveUserId('other=1', null, lookup)).resolves.toEqual({ kind: 'no-session' })
   })
 
-  it('maps a missing row or an expired session to null (the caller’s 401 contract)', async () => {
+  it('maps an unknown token hash to kind: no-session (malformed header tokens land here too)', async () => {
     await expect(
-      resolveUserId(`${SESSION_COOKIE}=tok`, async () => null),
-    ).resolves.toBeNull()
+      resolveUserId(`${SESSION_COOKIE}=tok`, null, async () => null),
+    ).resolves.toEqual({ kind: 'no-session' })
+  })
+
+  it('maps an expired row to kind: expired, preserving the row (the /auth/me caller needs it)', async () => {
     const past = new Date(Date.now() - 1000).toISOString()
+    const row = { user_id: 'u-1', expires_at: past }
     await expect(
-      resolveUserId(`${SESSION_COOKIE}=tok`, async () => ({ user_id: 'u-1', expires_at: past })),
-    ).resolves.toBeNull()
+      resolveUserId(`${SESSION_COOKIE}=tok`, null, async () => row),
+    ).resolves.toEqual({ kind: 'expired', row })
+  })
+
+  it('passes the full row through on kind: ok so /auth/me’s users(...) join survives', async () => {
+    const row = {
+      user_id: 'u-1',
+      expires_at: future,
+      users: { id: 'u-1', email: 'a@b.c', display_name: null, avatar_url: null },
+    }
+    const res = await resolveUserId(`${SESSION_COOKIE}=tok`, null, async () => row)
+    expect(res).toEqual({ kind: 'ok', row })
   })
 })
 

@@ -98,22 +98,37 @@ export interface SessionIdentity {
 }
 
 /**
- * CYJ-17 review (round 1): the one home for token -> user resolution. Both
- * Edge Functions (auth handleMe, room-authority) used to carry their own
- * copy of the token_hash -> sessions lookup, which would drift on
- * expiry/rotation semantics. Transport-free: the caller injects the lookup
- * (PostgREST in the Edge Functions, a stub in tests). Cookie-token first;
- * null when the cookie, the row, or the unexpired session is missing —
- * callers map null to their own 401 contract.
+ * CYJ-20: the outcome of resolving a session token to its sessions row, so
+ * every caller keeps its own HTTP mapping. `ok` carries the full row (the
+ * generic lets /auth/me's lookup return its embedded users(...) join — which
+ * has no user_id column — through this shared path); `expired` carries the
+ * row too (/auth/me needs it to clear the cookie); `no-session` covers both
+ * "no token anywhere" and "token hashed to no row" (the CYJ-15
+ * malformed-header case).
  */
-export async function resolveUserId(
+export type SessionResolution<Row extends { expires_at: string } = SessionIdentity> =
+  | { kind: 'ok'; row: Row }
+  | { kind: 'expired'; row: Row }
+  | { kind: 'no-session' }
+
+/**
+ * CYJ-17 review (round 1): the one home for token -> user resolution. Both
+ * Edge Functions (auth handleMe, room-authority) resolve sessions through
+ * this function (CYJ-20), so they cannot drift on expiry/rotation semantics.
+ * Transport-free: the caller injects the lookup (PostgREST in the Edge
+ * Functions, a stub in tests). Token selection delegates to
+ * resolveSessionToken (CYJ-15): the cookie wins, the x-cyj-session header
+ * falls back. Callers map the union to their own 401 contract.
+ */
+export async function resolveUserId<Row extends { expires_at: string } = SessionIdentity>(
   cookieHeader: string | null,
-  lookup: (tokenHash: string) => Promise<SessionIdentity | null>,
-): Promise<string | null> {
-  const token = parseCookies(cookieHeader)[SESSION_COOKIE]
-  if (!token) return null
+  headerToken: string | null,
+  lookup: (tokenHash: string) => Promise<Row | null>,
+): Promise<SessionResolution<Row>> {
+  const token = resolveSessionToken(cookieHeader, headerToken)
+  if (!token) return { kind: 'no-session' }
   const row = await lookup(await hashSessionToken(token))
-  if (!row) return null
-  if (isSessionExpired(new Date(row.expires_at))) return null
-  return row.user_id
+  if (!row) return { kind: 'no-session' }
+  if (isSessionExpired(new Date(row.expires_at))) return { kind: 'expired', row }
+  return { kind: 'ok', row }
 }
