@@ -7,6 +7,7 @@ import { RoomSettings } from './RoomSettings'
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
 import { hasFlag } from '../flags'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
+import { saveSessionToken } from '../auth/sessionToken'
 import './Lobby.css'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -15,7 +16,7 @@ const ordinal = (n: number) => (n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3
 /** S2 — Lobby (Home). */
 export default function Lobby() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
   const [joinOpen, setJoinOpen] = useState(false)
   // flag-cyj-7: consume the OAuth session (CYJ-8). The callback redirect
@@ -26,6 +27,21 @@ export default function Lobby() {
   // (The FUNCTIONS_URL check lives inside fetchCurrentUser — one home.)
   const authEnabled = hasFlag('flag-cyj-7', searchParams)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  // CYJ-15: the sign-in success redirect hands the raw session token in the
+  // URL (flow.ts). Consume it BEFORE the session fetch, store it durably so
+  // fetchCurrentUser attaches it as the x-cyj-session header, and strip it
+  // from the URL (replaceState) before it lands in browser history — the
+  // token is a one-shot hand-off, not a bookmarkable credential. Separate
+  // from the fetch effect so stripping the param (a searchParams change)
+  // cannot retrigger the fetch.
+  useEffect(() => {
+    const token = searchParams.get('cyj_session')
+    if (!token) return
+    saveSessionToken(token)
+    const next = new URLSearchParams(searchParams)
+    next.delete('cyj_session')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
   useEffect(() => {
     if (!authEnabled) return
     let cancelled = false

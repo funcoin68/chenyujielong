@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useSearchParams } from 'react-router-dom'
 import Lobby from './Lobby'
 import { PROFILE } from '../mock/data'
+import { SESSION_TOKEN_KEY } from '../auth/sessionToken'
+import { memoryStorage } from '../auth/memoryStorage'
 
 // The functions URL is baked at build time; tests provide one so the
 // flag-cyj-7 session fetch is enabled (production sets VITE_FUNCTIONS_URL).
-vi.mock('../config', () => ({ FUNCTIONS_URL: 'https://fn.example' }))
+vi.mock('../config', () => ({ FUNCTIONS_URL: 'https://fn.example', SUPABASE_ANON_KEY: 'anon-key' }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -29,16 +31,26 @@ async function renderLobby(route: string): Promise<HTMLElement> {
     root.render(
       <MemoryRouter initialEntries={[route]}>
         <Lobby />
+        {/* CYJ-15: exposes the router's current query string so tests can
+            assert the Lobby stripped the one-shot cyj_session param. */}
+        <UrlProbe />
       </MemoryRouter>,
     )
   })
   return container
 }
 
+function UrlProbe() {
+  const [searchParams] = useSearchParams()
+  return <output data-testid="url-probe">{searchParams.toString()}</output>
+}
+
 afterEach(() => {
   for (const root of roots.splice(0)) root.unmount()
   vi.unstubAllGlobals()
 })
+
+beforeEach(() => vi.stubGlobal('localStorage', memoryStorage()))
 
 describe('Lobby session consumption (CYJ-8 AC #4)', () => {
   // '/lobby?flags=flag-cyj-7' is exactly the URL the OAuth callback now
@@ -74,5 +86,24 @@ describe('Lobby session consumption (CYJ-8 AC #4)', () => {
     )
     const container = await renderLobby('/lobby?flags=flag-cyj-7')
     expect(container.textContent).toContain(`Hi, ${PROFILE.name}!`)
+  })
+
+  // CYJ-15 AC #1: the sign-in success redirect carries the raw session token
+  // in the /lobby URL; the Lobby must consume it into durable storage (so
+  // sessionClient can attach it as x-cyj-session), strip it from the URL
+  // before it hits browser history, and still run the session fetch.
+  it('consumes cyj_session from the URL, stores it, strips it, and fetches /me with the header', async () => {
+    const spy = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 })))
+    vi.stubGlobal('fetch', spy)
+    const container = await renderLobby('/lobby?flags=flag-cyj-7&cyj_session=tok-from-callback')
+    // stored durably — exactly what fetchCurrentUser later attaches
+    expect(localStorage.getItem(SESSION_TOKEN_KEY)).toBe('tok-from-callback')
+    // stripped from the router's current location via replaceState
+    expect(container.querySelector('[data-testid="url-probe"]')?.textContent).not.toContain('cyj_session')
+    // the session fetch ran, carrying the token header
+    expect(spy).toHaveBeenCalled()
+    const [, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
+    expect(new Headers(init.headers).get('x-cyj-session')).toBe('tok-from-callback')
+    expect(container.textContent).toContain(`Hi, ${USER.display_name}!`)
   })
 })

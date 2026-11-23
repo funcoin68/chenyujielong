@@ -143,7 +143,7 @@ describe('handleCallback — client-stored state (CYJ-14)', () => {
       appBaseUrl: APP,
     })
     expect(decision.status).toBe(302)
-    expect(decision.redirect).toBe(`${APP}/lobby`)
+    expect(new URL(decision.redirect!).pathname).toBe('/lobby')
     expect(decision.session).toBeDefined()
     expect(sessionCookieValue(decision.setCookies)).toBeDefined()
   })
@@ -171,7 +171,7 @@ describe('handleCallback — client-stored state (CYJ-14)', () => {
       claims: CLAIMS,
       appBaseUrl: APP,
     })
-    expect(decision.redirect).toBe(`${APP}/lobby`)
+    expect(new URL(decision.redirect!).pathname).toBe('/lobby')
     expect(decision.session).toBeDefined()
   })
 
@@ -225,7 +225,7 @@ describe('handleCallback — success (AC #1, AC #2)', () => {
       appBaseUrl: APP,
     })
     expect(decision.status).toBe(302)
-    expect(decision.redirect).toBe(`${APP}/lobby`)
+    expect(new URL(decision.redirect!).pathname).toBe('/lobby')
 
     // AC #2: the upsert payload creates a google user with no password hash.
     // (Returning users hit the same upsert keyed on email — PostgREST
@@ -251,6 +251,8 @@ describe('handleCallback — success (AC #1, AC #2)', () => {
 
   // CYJ-8 AC #4 fix: this is the URL the real OAuth callback produces, and
   // Lobby.test.tsx renders exactly it — the flag survives the round-trip.
+  // (CYJ-15: the redirect also carries cyj_session, asserted in the
+  // 'carries both the session token and the flags' test below.)
   it('echoes the flags carried in state into the lobby redirect', async () => {
     const state = encodeStateWithFlags('random-part', 'flag-cyj-7')
     const decision = await handleCallback({
@@ -260,8 +262,77 @@ describe('handleCallback — success (AC #1, AC #2)', () => {
       appBaseUrl: APP,
     })
     expect(decision.status).toBe(302)
-    expect(decision.redirect).toBe(`${APP}/lobby?flags=flag-cyj-7`)
+    expect(new URL(decision.redirect!).searchParams.get('flags')).toBe('flag-cyj-7')
     expect(sessionCookieValue(decision.setCookies)).toBeDefined()
+  })
+
+  // CYJ-15 AC #1: the client holds no third-party-readable credential after
+  // sign-in (the HttpOnly cookie is on the functions domain and cross-site
+  // requests never carry it), so the success redirect must hand the raw
+  // session token to the app URL, where the Lobby consumes it and attaches it
+  // as the x-cyj-session header on /auth/me.
+  it('carries the raw session token on the success redirect', async () => {
+    const decision = await handleCallback({
+      query: query({ code: 'c', state: 'st' }),
+      stateCookie: 'st',
+      claims: CLAIMS,
+      appBaseUrl: APP,
+    })
+    expect(decision.status).toBe(302)
+    expect(decision.session).toBeDefined()
+    const redirect = new URL(decision.redirect!)
+    const cookie = sessionCookieValue(decision.setCookies)!
+    const cookieToken = cookie.split(';')[0].slice(`${SESSION_COOKIE}=`.length)
+    expect(redirect.searchParams.get('cyj_session')).toBe(cookieToken)
+    expect(redirect.pathname).toBe('/lobby')
+  })
+
+  it('carries both the session token and the flags on the success redirect', async () => {
+    const state = encodeStateWithFlags('random-part', 'flag-cyj-7')
+    const decision = await handleCallback({
+      query: query({ code: 'c', state }),
+      stateCookie: state,
+      claims: CLAIMS,
+      appBaseUrl: APP,
+    })
+    const redirect = new URL(decision.redirect!)
+    expect(redirect.searchParams.get('cyj_session')).toBeTruthy()
+    expect(redirect.searchParams.get('flags')).toBe('flag-cyj-7')
+  })
+
+  // Failure branches issue no token — a failed sign-in must never look signed
+  // in (the error contract stays exactly the CYJ-8 shape).
+  it('issues no cyj_session on the Google-error redirect', async () => {
+    const decision = await handleCallback({
+      query: query({ error: 'access_denied', state: 'st' }),
+      stateCookie: 'st',
+      claims: CLAIMS,
+      appBaseUrl: APP,
+    })
+    expect(new URL(decision.redirect!).searchParams.get('cyj_session')).toBeNull()
+    expect(decision.session).toBeUndefined()
+  })
+
+  it('issues no cyj_session on the state_mismatch redirect', async () => {
+    const decision = await handleCallback({
+      query: query({ code: 'c', state: 'wrong' }),
+      stateCookie: 'st',
+      claims: CLAIMS,
+      appBaseUrl: APP,
+    })
+    expect(new URL(decision.redirect!).searchParams.get('cyj_session')).toBeNull()
+    expect(decision.session).toBeUndefined()
+  })
+
+  it('issues no cyj_session on the invalid_token redirect', async () => {
+    const decision = await handleCallback({
+      query: query({ code: 'c', state: 'st' }),
+      stateCookie: 'st',
+      claims: null,
+      appBaseUrl: APP,
+    })
+    expect(new URL(decision.redirect!).searchParams.get('cyj_session')).toBeNull()
+    expect(decision.session).toBeUndefined()
   })
 
   it('re-encodes flags so they cannot break out of the query string', async () => {
@@ -272,6 +343,6 @@ describe('handleCallback — success (AC #1, AC #2)', () => {
       claims: CLAIMS,
       appBaseUrl: APP,
     })
-    expect(decision.redirect).toBe(`${APP}/lobby?flags=flag-a%2Cflag-b`)
+    expect(new URL(decision.redirect!).searchParams.get('flags')).toBe('flag-a,flag-b')
   })
 })
