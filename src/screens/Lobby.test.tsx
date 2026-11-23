@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
+import type { ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter, Route, Routes, useLocation, useParams, type InitialEntry } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import Lobby from './Lobby'
 import { PROFILE } from '../mock/data'
 import { SESSION_TOKEN_KEY } from '../auth/sessionToken'
 import { invalidateSessionCache } from '../auth/sessionClient'
 import { memoryStorage } from '../auth/memoryStorage'
+
+/** An entry MemoryRouter accepts in initialEntries — derived from its own
+ *  props so we don't depend on a deep re-exported type name. */
+type RouterInitialEntry = NonNullable<ComponentProps<typeof MemoryRouter>['initialEntries']>[number]
 
 // The functions URL is baked at build time; tests provide one so the
 // session fetch is enabled (production sets VITE_FUNCTIONS_URL). CYJ-16
@@ -25,7 +30,7 @@ const USER = {
 
 const roots: Root[] = []
 
-async function renderLobby(route: string | InitialEntry): Promise<HTMLElement> {
+async function renderLobby(route: string | RouterInitialEntry): Promise<HTMLElement> {
   const container = document.createElement('div')
   const root = createRoot(container)
   roots.push(root)
