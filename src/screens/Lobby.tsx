@@ -7,7 +7,7 @@ import { RoomSettings, type RoomSettingsValues } from './RoomSettings'
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import { saveSessionToken } from '../auth/sessionToken'
-import { createRoom } from '../rooms/roomClient'
+import { closeRoom, createRoom, fetchActiveRoom, type ActiveRoom } from '../rooms/roomClient'
 import './Lobby.css'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -45,8 +45,16 @@ export default function Lobby() {
   }, [location, navigate])
   useEffect(() => {
     let cancelled = false
-    fetchCurrentUser().then((user) => {
-      if (!cancelled) setAuthUser(user)
+    fetchCurrentUser().then(async (user) => {
+      if (cancelled) return
+      setAuthUser(user)
+      // CYJ-23: only signed-in users have the "Your active room" section, and
+      // the endpoint 401s without a session — so the read is chained off a
+      // successful session resolution, never fired for anonymous visitors.
+      if (!user) return
+      const result = await fetchActiveRoom()
+      if (cancelled || result.kind !== 'ok') return
+      setActiveRoom(result.room)
     })
     return () => {
       cancelled = true
@@ -59,6 +67,35 @@ export default function Lobby() {
   // this path is unconditional.
   const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  // CYJ-23: the "Your active room" section. null = no active room (or still
+  // resolving — the section only renders once authUser is known).
+  const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null)
+  const [closeOpen, setCloseOpen] = useState(false)
+  const [closeError, setCloseError] = useState<string | null>(null)
+  const [closing, setClosing] = useState(false)
+  const submitClose = async () => {
+    if (!activeRoom || closing) return
+    setClosing(true)
+    setCloseError(null)
+    try {
+      const result = await closeRoom(activeRoom.roomId)
+      if (result.kind === 'ok') {
+        // AC #5: the closed room leaves the section (empty state). The row is
+        // kept server-side with status 'closed'; the owner can now create a
+        // new room since closed rows don't hit the one-active index.
+        setCloseOpen(false)
+        setActiveRoom(null)
+      } else if (result.kind === 'unauthorized') {
+        setCloseError('Please sign in to manage rooms.')
+      } else if (result.kind === 'forbidden') {
+        setCloseError('You are not the owner of this room.')
+      } else {
+        setCloseError(result.message)
+      }
+    } finally {
+      setClosing(false)
+    }
+  }
   const submitCreate = async (settings: RoomSettingsValues) => {
     if (creating) return
     setCreating(true)
@@ -131,6 +168,56 @@ export default function Lobby() {
             </button>
           </div>
         </section>
+
+        {/* CYJ-23: the signed-in user's own active room — code, enter, close.
+            Hidden entirely when signed out (the endpoint requires a session);
+            an explicit empty state when signed in with no active room. */}
+        {authUser && (
+          <section className="lobby-active" aria-labelledby="lobby-active-heading">
+            <h2 id="lobby-active-heading" className="lobby-section-title">
+              Your active room
+            </h2>
+            {activeRoom ? (
+              <div className="card lobby-active-row">
+                <div className="lobby-room-info">
+                  <span className="lobby-room-name">{activeRoom.name ?? 'Untitled room'}</span>
+                  <span className="lobby-room-meta">
+                    <span className="chip">{activeRoom.code}</span>
+                    <span className="chip">
+                      {activeRoom.status === 'waiting' ? 'waiting' : 'in progress'}
+                    </span>
+                  </span>
+                </div>
+                <div className="lobby-active-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => navigate(`/room/${activeRoom.roomId}`)}
+                  >
+                    Enter
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => {
+                      setCloseError(null)
+                      setCloseOpen(true)
+                    }}
+                  >
+                    Close room
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="lobby-active-empty">No active room</p>
+            )}
+            {closeError && (
+              <p className="lobby-create-error" role="alert">
+                {closeError}
+              </p>
+            )}
+          </section>
+        )}
 
         <section className="lobby-rooms" aria-labelledby="lobby-rooms-heading">
           <h2 id="lobby-rooms-heading" className="lobby-section-title">
@@ -208,6 +295,26 @@ export default function Lobby() {
       <Modal open={joinOpen} onClose={() => setJoinOpen(false)} title="Join with Code">
         <CodeInput label="Room code" onComplete={() => navigate(`/room/${ROOM.id}`)} />
         <p className="lobby-join-hint">or open an invite link</p>
+      </Modal>
+
+      {/* CYJ-23 — Close room confirm */}
+      <Modal open={closeOpen} onClose={() => setCloseOpen(false)} title="Close room?">
+        <p className="lobby-close-confirm">
+          Closing this room ends it for everyone. The room code will stop working.
+        </p>
+        {closeError && (
+          <p className="lobby-create-error" role="alert">
+            {closeError}
+          </p>
+        )}
+        <div className="lobby-secondary">
+          <button type="button" className="btn btn-outline" onClick={() => setCloseOpen(false)}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary" disabled={closing} onClick={submitClose}>
+            {closing ? 'Closing…' : 'Close room'}
+          </button>
+        </div>
       </Modal>
     </main>
   )

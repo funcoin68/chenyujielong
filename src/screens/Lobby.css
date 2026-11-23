@@ -167,6 +167,31 @@
   text-align: center;
 }
 
+/* CYJ-23: "Your active room" section — room row mirrors .lobby-room, with a
+   two-button action group; the empty state is a quiet secondary line. */
+.lobby-active-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.lobby-active-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.lobby-active-empty {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 14px;
+}
+
+.lobby-close-confirm {
+  margin: 0 0 var(--space-2);
+}
+
 /* Desktop: two columns — actions sticky left, rooms + recent right (spec S2) */
 @media (min-width: 768px) {
   .lobby-columns {
