@@ -35,6 +35,12 @@ begin
 end;
 $$;
 
+-- The function deletes rows, so don't leave EXECUTE to PUBLIC by default:
+-- only the trigger (running as the function owner) and the service role
+-- (the auth Edge Function) should be able to invoke it directly.
+revoke execute on function public.enforce_session_cap() from public;
+grant execute on function public.enforce_session_cap() to service_role;
+
 create trigger sessions_enforce_cap
   after insert on public.sessions
   for each row execute function public.enforce_session_cap();
