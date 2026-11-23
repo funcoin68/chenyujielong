@@ -68,6 +68,8 @@ jobs:
           DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: python scripts/maybe_aggregate.py --pr "${{ inputs.pr_number }}" --ticket "${{ inputs.ticket_key }}"
         # exits unless all three reviewed-* labels present. Then:
-        #   any criticals        -> dispatch stage7-fix (round N+1, cap 3)
-        #   no criticals+approve -> consensus-passed label, dispatch stage8b
-        #   conflicting verdicts -> flag human, swarm stops
+        #   criticals OR a changes-requested (block) verdict -> dispatch
+        #     stage7-fix (round N+1, cap 3); still open after round 3 -> human
+        #     (bug #46: block used to go straight to human, fix loop never ran)
+        #   zero criticals + zero change requests -> consensus-passed label,
+        #     dispatch stage8b

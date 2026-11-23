@@ -2,7 +2,8 @@
 three reviewed-* labels are present (fires exactly once, on the last reviewer).
 Decision matrix (PDF stage 7/8):
   any persona missing            -> exit quietly (not my job yet)
-  any 'block' verdict            -> flag human, swarm stops
+  block (= changes requested)    -> dispatch stage7-fix round N+1 (bug #46;
+                                    was: straight to human, fix loop never ran)
   any criticals                  -> dispatch stage7-fix round N+1 (N<3), else human
   all approve/comment, 0 crit    -> consensus-passed label + dispatch stage 8b
 Usage: maybe_aggregate.py --pr 482 --ticket PROJ-123
@@ -57,15 +58,25 @@ def latest_verdicts(pr):
     return verdicts
 
 def decide(verdicts, fix_round):
-    """Pure decision function — unit-tested. Returns (action, detail)."""
+    """Pure decision function — unit-tested. Returns (action, detail).
+    bug #46: a 'block' verdict IS a changes-requested (post_review maps
+    request_changes -> block), so it enters the same bounded fix loop as
+    criticals — a change request was previously a dead end straight to
+    human. A request that survives MAX_FIX_ROUNDS rounds still lands on a
+    human; consensus genuinely means zero criticals AND zero change requests."""
     vs = {p: canon_verdict(v.get("verdict")) for p, v in verdicts.items()}
-    if any(x == "block" for x in vs.values()):
-        return "human", "a reviewer used veto (block)"
+    requested = sorted(p for p, x in vs.items() if x == "block")
     total_crit = sum(parse_crit(v.get("criticals")) for v in verdicts.values())
-    if total_crit > 0:
+    if requested or total_crit > 0:
         if fix_round >= MAX_FIX_ROUNDS:
-            return "human", f"criticals still open after {fix_round} fix rounds"
-        return "fix", f"{total_crit} criticals -> fix round {fix_round + 1}"
+            return "human", (f"changes still requested ({', '.join(requested)}) / "
+                             f"{total_crit} criticals open after {fix_round} fix rounds")
+        why = []
+        if requested:
+            why.append(f"changes requested by {', '.join(requested)}")
+        if total_crit:
+            why.append(f"{total_crit} criticals")
+        return "fix", "; ".join(why) + f" -> fix round {fix_round + 1}"
     return "consensus", "CI green + zero criticals + security pass"
 
 def healable(labels, verdicts, now=None):
