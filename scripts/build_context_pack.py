@@ -32,6 +32,7 @@ IGNORE = {"package-lock.json", "__pycache__"}
 
 MODULE_DIRS = {
     "src/lib": "Shared rule primitives (Deno Edge Function + Vitest both import)",
+    "src/lib/auth": "Google OAuth flow + session logic (shared Deno + Vitest, CYJ-7)",
     "src/screens": "Route-level screens (spec §3)",
     "src/ui": "Reusable components (one CSS per component)",
     "src/mock": "Fixture data — the entire current 'backend'",
@@ -119,6 +120,43 @@ def recent_decisions():
     return "\n".join(rows) or "- (no commits in window)"
 
 
+def migrations_block():
+    """bug #47: mechanical ground truth for migrations, injected into pack §3
+    every run. The curated prose drifted ("No database schema exists yet"
+    survived CYJ-7's first migration) because the nightly refresh only COPIES
+    pack-curated.md — it can never contradict its source. This block is
+    re-derived from disk, so stale prose gets visibly overridden."""
+    mdir = ROOT / "supabase" / "migrations"
+    files = sorted(mdir.glob("*.sql")) if mdir.is_dir() else []
+    listed = ", ".join(f"`{f.name}`" for f in files) if files else "(none yet)"
+    return ("\n### Migrations on disk (mechanical — regenerated every run; "
+            "trust this over any prose above)\n"
+            f"- `supabase/migrations/` — {len(files)} file(s): {listed}")
+
+
+def curated_drift_warnings(sections):
+    """bug #47 tripwire: loud ::warning:: when curated §3/§9 claim there is no
+    schema/migrations while supabase/migrations/ HAS them (or claim a schema
+    while none exists). Drift then shows in the nightly run summary instead of
+    silently shipping stale agent memory for weeks."""
+    mdir = ROOT / "supabase" / "migrations"
+    has_migrations = mdir.is_dir() and any(mdir.glob("*.sql"))
+    warns = []
+    for num in ("3", "9"):
+        body = sections.get(num, "")
+        claims_none = re.search(r"no database schema|no migrations|does not exist",
+                                body, re.I)
+        claims_some = re.search(r"schema shipped|migration `?\d|tables?:", body, re.I)
+        if has_migrations and claims_none:
+            warns.append(f"pack-curated.md §{num} claims no schema/migrations but "
+                         "supabase/migrations/ has SQL — the pack only copies this "
+                         "file; fix the prose (bug #47)")
+        if not has_migrations and claims_some:
+            warns.append(f"pack-curated.md §{num} claims a schema but "
+                         "supabase/migrations/ is empty — fix the prose (bug #47)")
+    return warns
+
+
 def render(sections):
     today = datetime.date.today().isoformat()
     commit = sh("git rev-parse --short HEAD")
@@ -140,6 +178,7 @@ def render(sections):
 
 ## 3. Data model
 {s('3')}
+{migrations_block()}
 
 ## 4. API / interface contracts
 {s('4')}
@@ -172,7 +211,10 @@ def main():
     if not CURATED.exists():
         raise SystemExit(f"FATAL: {CURATED} missing — it is the human-owned "
                          "source of the narrative sections.")
-    new = render(curated_sections())
+    sections = curated_sections()
+    for w in curated_drift_warnings(sections):
+        print(f"::warning::{w}")
+    new = render(sections)
     if "--check" in sys.argv:
         old = OUT.read_text() if OUT.exists() else ""
         if old != new:
