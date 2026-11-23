@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createRoom } from './roomClient'
+import { createRoom, fetchActiveRoom, closeRoom } from './roomClient'
 import { saveSessionToken } from '../auth/sessionToken'
 import { memoryStorage } from '../auth/memoryStorage'
 
@@ -86,5 +86,106 @@ describe('createRoom — x-cyj-session header transport (CYJ-20)', () => {
     await createRoom(SETTINGS)
     const [, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
     expect(new Headers(init.headers).get('x-cyj-session')).toBeNull()
+  })
+})
+
+const ACTIVE_ROOM = { roomId: 'r-1', code: 'AB23CD', name: 'My room', status: 'waiting' as const }
+
+describe('fetchActiveRoom (CYJ-23)', () => {
+  it('returns an error result without a network call when FUNCTIONS_URL is not configured', async () => {
+    configState.functionsUrl = ''
+    const spy = mockFetch(() => Promise.resolve(new Response('{"room":null}', { status: 200 })))
+    const res = await fetchActiveRoom()
+    expect(res).toEqual({ kind: 'error', message: 'game server is not configured' })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('resolves the active room on a 200 response', async () => {
+    mockFetch(() =>
+      Promise.resolve(new Response(JSON.stringify({ room: ACTIVE_ROOM }), { status: 200 })),
+    )
+    expect(await fetchActiveRoom()).toEqual({ kind: 'ok', room: ACTIVE_ROOM })
+  })
+
+  it('resolves to a null room when the server reports no active room', async () => {
+    mockFetch(() => Promise.resolve(new Response('{"room":null}', { status: 200 })))
+    expect(await fetchActiveRoom()).toEqual({ kind: 'ok', room: null })
+  })
+
+  it('maps a 401 to the unauthorized result (no session)', async () => {
+    mockFetch(() => Promise.resolve(new Response('{"error":"no session"}', { status: 401 })))
+    expect(await fetchActiveRoom()).toEqual({ kind: 'unauthorized' })
+  })
+
+  it('maps a non-ok response to an error result carrying the server message', async () => {
+    mockFetch(() =>
+      Promise.resolve(new Response('{"error":"active room lookup failed"}', { status: 500 })),
+    )
+    const res = await fetchActiveRoom()
+    expect(res.kind).toBe('error')
+    if (res.kind === 'error') expect(res.message).toContain('active room lookup failed')
+  })
+
+  it('rejects an invalid payload instead of trusting it (rule 9)', async () => {
+    mockFetch(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ room: { roomId: 'r-1', code: 42 } }), { status: 200 }),
+      ),
+    )
+    const res = await fetchActiveRoom()
+    expect(res).toEqual({ kind: 'error', message: 'game server returned an invalid response' })
+  })
+
+  it('sends credentials and the stored session token to the active-room endpoint', async () => {
+    saveSessionToken('tok-abc')
+    const spy = mockFetch(() =>
+      Promise.resolve(new Response('{"room":null}', { status: 200 })),
+    )
+    await fetchActiveRoom()
+    const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toMatch(/\/room-authority\/active-room$/)
+    expect(init.method).toBeUndefined()
+    expect(init.credentials).toBe('include')
+    expect(new Headers(init.headers).get('x-cyj-session')).toBe('tok-abc')
+  })
+})
+
+describe('closeRoom (CYJ-23)', () => {
+  it('returns an error result without a network call when FUNCTIONS_URL is not configured', async () => {
+    configState.functionsUrl = ''
+    const spy = mockFetch(() => Promise.resolve(new Response('{}', { status: 200 })))
+    const res = await closeRoom('r-1')
+    expect(res).toEqual({ kind: 'error', message: 'game server is not configured' })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('POSTs the roomId to the close-room endpoint and resolves ok on 200', async () => {
+    const spy = mockFetch(() =>
+      Promise.resolve(new Response(JSON.stringify({ roomId: 'r-1', status: 'closed' }), { status: 200 })),
+    )
+    expect(await closeRoom('r-1')).toEqual({ kind: 'ok' })
+    const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toMatch(/\/room-authority\/close-room$/)
+    expect(init.method).toBe('POST')
+    expect(init.credentials).toBe('include')
+    expect(JSON.parse(String(init.body))).toEqual({ roomId: 'r-1' })
+  })
+
+  it('maps a 401 to unauthorized and a 403 to forbidden', async () => {
+    mockFetch(() => Promise.resolve(new Response('{"error":"no session"}', { status: 401 })))
+    expect(await closeRoom('r-1')).toEqual({ kind: 'unauthorized' })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('{"error":"not the room owner"}', { status: 403 }))),
+    )
+    expect(await closeRoom('r-1')).toEqual({ kind: 'forbidden' })
+  })
+
+  it('maps a non-ok response to an error result carrying the server message', async () => {
+    mockFetch(() => Promise.resolve(new Response('{"error":"room not found"}', { status: 404 })))
+    const res = await closeRoom('r-1')
+    expect(res.kind).toBe('error')
+    if (res.kind === 'error') expect(res.message).toContain('room not found')
   })
 })
