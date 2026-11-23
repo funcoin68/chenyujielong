@@ -158,6 +158,15 @@
   font-size: 14px;
 }
 
+/* flag-cyj-17: create-room failure surfaced in the modal (AC #4), same
+   indicator style as the Landing sign-in error */
+.lobby-create-error {
+  margin: 0 0 12px;
+  color: var(--error-coral);
+  font-size: 14px;
+  text-align: center;
+}
+
 /* Desktop: two columns — actions sticky left, rooms + recent right (spec S2) */
 @media (min-width: 768px) {
   .lobby-columns {

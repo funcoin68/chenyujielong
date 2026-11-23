@@ -2,9 +2,18 @@ import { useState } from 'react'
 import { PROFILE } from '../mock/data'
 import './RoomSettings.css'
 
+export interface RoomSettingsValues {
+  name: string
+  rule: 'strict' | 'homophone'
+  turnSeconds: number
+  maxPlayers: number
+  winCondition: 'rounds' | 'elimination'
+  dictionary: 'common' | 'full'
+}
+
 export interface RoomSettingsProps {
   submitLabel: string
-  onSubmit: () => void
+  onSubmit: (settings: RoomSettingsValues) => void
 }
 
 const TIMER_OPTIONS = [15, 30, 60]
@@ -28,7 +37,7 @@ export function RoomSettings({ submitLabel, onSubmit }: RoomSettingsProps) {
       className="room-settings"
       onSubmit={(e) => {
         e.preventDefault()
-        onSubmit()
+        onSubmit({ name, rule, turnSeconds: timer, maxPlayers: players, winCondition: win, dictionary: dict })
       }}
     >
       <label className="room-settings-field">
