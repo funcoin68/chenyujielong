@@ -187,9 +187,50 @@ export default function Lobby() {
           </div>
         </section>
 
+        <section className="lobby-rooms" aria-labelledby="lobby-rooms-heading">
+          <h2 id="lobby-rooms-heading" className="lobby-section-title">
+            Friends&apos; rooms ({LOBBY_ROOMS.length})
+          </h2>
+          <ul className="lobby-room-list">
+            {LOBBY_ROOMS.map((room) => (
+              <li key={room.name} className="card lobby-room">
+                <div className="lobby-room-info">
+                  <span className="lobby-room-name">{room.name}</span>
+                  <span className="lobby-room-meta">
+                    <span className="chip">{room.occupancy}</span>
+                    <span className="chip">
+                      {room.status === 'waiting' ? 'waiting' : 'in progress'}
+                    </span>
+                    {room.modes.map((m) => (
+                      <span key={m} className="chip">
+                        {m}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+                {room.status === 'waiting' ? (
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => navigate(`/room/${ROOM.id}`)}
+                  >
+                    Join
+                  </button>
+                ) : (
+                  <button type="button" className="btn btn-outline" disabled>
+                    In progress
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+
         {/* CYJ-23: the signed-in user's own active room — code, enter, close.
             Hidden entirely when signed out (the endpoint requires a session);
-            an explicit empty state when signed in with no active room. */}
+            an explicit empty state when signed in with no active room.
+            CYJ-24: the section swapped positions with Friends' rooms (pure
+            layout — no content change). */}
         {authUser && (
           <section className="lobby-active" aria-labelledby="lobby-active-heading">
             <h2 id="lobby-active-heading" className="lobby-section-title">
@@ -237,45 +278,6 @@ export default function Lobby() {
                 here too would double the role="alert" while the modal is open. */}
           </section>
         )}
-
-        <section className="lobby-rooms" aria-labelledby="lobby-rooms-heading">
-          <h2 id="lobby-rooms-heading" className="lobby-section-title">
-            Friends&apos; rooms ({LOBBY_ROOMS.length})
-          </h2>
-          <ul className="lobby-room-list">
-            {LOBBY_ROOMS.map((room) => (
-              <li key={room.name} className="card lobby-room">
-                <div className="lobby-room-info">
-                  <span className="lobby-room-name">{room.name}</span>
-                  <span className="lobby-room-meta">
-                    <span className="chip">{room.occupancy}</span>
-                    <span className="chip">
-                      {room.status === 'waiting' ? 'waiting' : 'in progress'}
-                    </span>
-                    {room.modes.map((m) => (
-                      <span key={m} className="chip">
-                        {m}
-                      </span>
-                    ))}
-                  </span>
-                </div>
-                {room.status === 'waiting' ? (
-                  <button
-                    type="button"
-                    className="btn btn-outline"
-                    onClick={() => navigate(`/room/${ROOM.id}`)}
-                  >
-                    Join
-                  </button>
-                ) : (
-                  <button type="button" className="btn btn-outline" disabled>
-                    In progress
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
 
         <section className="lobby-recent" aria-labelledby="lobby-recent-heading">
           <h2 id="lobby-recent-heading" className="lobby-section-title">
