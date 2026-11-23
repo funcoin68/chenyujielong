@@ -41,7 +41,10 @@ export default function Lobby() {
     const token = new URLSearchParams(location.hash.slice(1)).get('cyj_session')
     if (!token) return
     saveSessionToken(token)
-    navigate(location.pathname + location.search, { replace: true })
+    // The replace preserves location.state, so a one-shot notice handed over
+    // via router state (CYJ-28) survives the strip instead of depending on
+    // the two mechanisms never overlapping (round-2 review, Lobby.tsx:78).
+    navigate(location.pathname + location.search, { replace: true, state: location.state })
   }, [location, navigate])
   useEffect(() => {
     let cancelled = false
@@ -72,9 +75,9 @@ export default function Lobby() {
 
   // CYJ-28: screens that redirect here (e.g. a failed room read on the
   // settings route) hand over a one-shot notice via router location state.
-  // Safe alongside the fragment-strip effect above: that effect only replaces
-  // history when a cyj_session hash token exists, so a plain redirect's state
-  // survives.
+  // The fragment-strip effect above preserves state across its replace, so
+  // this read is safe on every path — covered by the regression test
+  // 'survives the cyj_session fragment strip' in Lobby.test.tsx.
   const notice = (location.state as { notice?: string } | null)?.notice
 
   // CYJ-17: real create-room through the room-authority Edge Function. The

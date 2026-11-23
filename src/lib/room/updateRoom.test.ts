@@ -72,18 +72,21 @@ describe('updateRoomDecision', () => {
     expect(decision.body).toEqual({ error: 'room not found' })
   })
 
-  // AC #6 (server-side enforcement): a non-host with a syntactically valid
-  // payload gets 403 and the room is untouched — the write never happens.
-  it('maps a non-owner with a valid payload to 403 and leaves the room unchanged', () => {
-    const room = { id: 'r-1', owner_id: 'u-2', name: 'Old name' }
+  // AC #6 (server-side enforcement): a non-owner with a syntactically valid
+  // payload gets 403 — and ONLY the error shape, never a success-shaped body
+  // echoing the attacker's settings that a client could misread. The "row is
+  // untouched" half of AC #6 is structural, not assertable here: this mapping
+  // is pure and never receives a mutable row, and the Edge Function issues
+  // the PATCH only when this returns 200 (room-authority/index.ts — the
+  // 403 branch returns before any IO).
+  it('maps a non-owner with a valid payload to 403 with no settings echo', () => {
     const decision = updateRoomDecision({
       userId: 'u-1',
-      room,
+      room: { id: 'r-1', owner_id: 'u-2' },
       settings: { ...VALID_SETTINGS, name: 'Hijacked' },
     })
     expect(decision.status).toBe(403)
     expect(decision.body).toEqual({ error: 'not the room owner' })
-    expect(room.name).toBe('Old name')
   })
 
   it('maps the owner to 200 with the roomId and settings echoed', () => {
