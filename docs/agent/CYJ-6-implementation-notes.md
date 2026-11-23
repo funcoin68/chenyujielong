@@ -35,6 +35,7 @@ modules: [src/, index.html, package.json, package-lock.json]
 - `npm run lint` — clean.
 - `npm run build` (`tsc -b && vite build`) — clean.
 - `vite preview` smoke: all six routes return HTTP 200.
+- eliminate error TS2493: Tuple type ‘[]’ of length ‘0’ has no element at index ‘0’.
 
 Runtime-only behaviors (Esc close, focus return, shake animation, rAF timer)
 are not covered by unit tests — Vitest runs in `node` env with no jsdom, and
