@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import WaitingRoom from './WaitingRoom'
 import { ROOM, PLAYERS } from '../mock/data'
 import { memoryStorage } from '../auth/memoryStorage'
@@ -42,16 +42,49 @@ const PAYLOAD = {
 
 const FIXTURE_PLAYER_NAMES = PLAYERS.map((p) => p.name)
 
+const GUEST_ME = () =>
+  Promise.resolve(
+    new Response(
+      JSON.stringify({
+        user: { id: 'u-guest', email: 'g@x.test', display_name: 'Greta Guest', avatar_url: 'https://x.test/g.png' },
+      }),
+      { status: 200 },
+    ),
+  )
+
+const HOST_ME = () =>
+  Promise.resolve(
+    new Response(
+      JSON.stringify({ user: { id: 'u-host', email: 'h@x.test', display_name: 'Host Han', avatar_url: null } }),
+      { status: 200 },
+    ),
+  )
+
+const LEAVE_OK = () =>
+  Promise.resolve(new Response(JSON.stringify({ roomId: 'r-real-1', left: true }), { status: 200 }))
+
+// Renders outside any <Route> match so navigation targets stay observable:
+// the /lobby marker proves a successful leave navigated, the * marker's
+// pathname proves a failed leave stayed on /room/:roomId.
+function LocationMarker() {
+  const { pathname } = useLocation()
+  return <div data-testid="location-marker">{pathname}</div>
+}
+
 async function renderWaitingRoom(
   route: string,
   handlers: {
     room?: (url: string) => Promise<Response>
     me?: () => Promise<Response>
+    leave?: () => Promise<Response>
   } = {},
-): Promise<{ container: HTMLElement; roomUrls: string[] }> {
+): Promise<{ container: HTMLElement; roomUrls: string[]; fetchMock: ReturnType<typeof vi.fn> }> {
   const roomUrls: string[] = []
   const fetchMock = vi.fn((url: string | URL) => {
     const urlString = String(url)
+    if (urlString.includes('/room-authority/leave-room')) {
+      return (handlers.leave ?? LEAVE_OK)()
+    }
     if (urlString.includes('/room-authority/room/')) {
       roomUrls.push(urlString)
       return (handlers.room ?? (() =>
@@ -71,6 +104,8 @@ async function renderWaitingRoom(
       <MemoryRouter initialEntries={[route]}>
         <Routes>
           <Route path="/room/:roomId" element={<WaitingRoom />} />
+          <Route path="/lobby" element={<div>LOBBY_MARKER</div>} />
+          <Route path="*" element={<LocationMarker />} />
         </Routes>
       </MemoryRouter>,
     )
@@ -80,7 +115,7 @@ async function renderWaitingRoom(
   await act(async () => {
     for (let i = 0; i < 10; i++) await Promise.resolve()
   })
-  return { container, roomUrls }
+  return { container, roomUrls, fetchMock }
 }
 
 afterEach(async () => {
@@ -176,5 +211,77 @@ describe('WaitingRoom (CYJ-24)', () => {
     const rows = container.querySelectorAll('.waiting-player-list .waiting-player')
     expect(rows[0].textContent).toContain('Host Han (you)')
     expect(rows[1].textContent).not.toContain('(you)')
+  })
+})
+
+describe('WaitingRoom — Leave Room (CYJ-32)', () => {
+  const findLeaveButton = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Leave Room')
+
+  async function clickLeave(container: HTMLElement) {
+    const button = findLeaveButton(container)
+    expect(button).toBeTruthy()
+    await act(async () => {
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+    })
+  }
+
+  it('non-host: renders the Leave Room action and POSTs leave-room with the room id on click', async () => {
+    const { container, fetchMock } = await renderWaitingRoom('/room/r-real-1', { me: GUEST_ME })
+    expect(findLeaveButton(container)).toBeTruthy()
+
+    await clickLeave(container)
+
+    const leaveCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/room-authority/leave-room'))
+    expect(leaveCall).toBeTruthy()
+    const init = leaveCall![1] as RequestInit
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({ roomId: 'r-real-1' })
+  })
+
+  it('non-host: a 200 leave navigates to /lobby', async () => {
+    const { container } = await renderWaitingRoom('/room/r-real-1', { me: GUEST_ME, leave: LEAVE_OK })
+    await clickLeave(container)
+    expect(container.textContent).toContain('LOBBY_MARKER')
+  })
+
+  it('host: no Leave Room action is rendered (AC #3)', async () => {
+    const { container, fetchMock } = await renderWaitingRoom('/room/r-real-1', { me: HOST_ME })
+    expect(findLeaveButton(container)).toBeUndefined()
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/room-authority/leave-room'))).toBe(false)
+  })
+
+  it('signed-out viewer: no Leave Room action is rendered', async () => {
+    const { container } = await renderWaitingRoom('/room/r-real-1')
+    expect(findLeaveButton(container)).toBeUndefined()
+  })
+
+  it('non-host: a 500 leave keeps the player in the room and shows a role=alert error (AC #4)', async () => {
+    const { container } = await renderWaitingRoom('/room/r-real-1', {
+      me: GUEST_ME,
+      leave: () => Promise.resolve(new Response('{"error":"room leave failed"}', { status: 500 })),
+    })
+    await clickLeave(container)
+
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toBeTruthy()
+    // The player stayed: the room is still rendered, the lobby marker is not.
+    expect(container.textContent).toContain(PAYLOAD.room.code)
+    expect(container.textContent).toContain('Players 2/4')
+    expect(container.textContent).not.toContain('LOBBY_MARKER')
+  })
+
+  it('non-host: a network rejection keeps the player in the room and shows a role=alert error (AC #4)', async () => {
+    const { container } = await renderWaitingRoom('/room/r-real-1', {
+      me: GUEST_ME,
+      leave: () => Promise.reject(new Error('connection refused')),
+    })
+    await clickLeave(container)
+
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toBeTruthy()
+    expect(container.textContent).toContain(PAYLOAD.room.code)
+    expect(container.textContent).not.toContain('LOBBY_MARKER')
   })
 })

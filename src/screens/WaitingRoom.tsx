@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PlayerAvatar } from '../ui/PlayerAvatar'
 import { QUICK_CHAT } from '../mock/data'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
-import { fetchRoom, type FetchRoomResult } from '../rooms/roomClient'
+import { fetchRoom, leaveRoom, type FetchRoomResult } from '../rooms/roomClient'
 import './WaitingRoom.css'
 
 /** S5 — Waiting Room. CYJ-24: renders the REAL room fetched from
@@ -15,6 +15,11 @@ export default function WaitingRoom() {
   const navigate = useNavigate()
   const { roomId = '' } = useParams()
   const [copied, setCopied] = useState(false)
+  // CYJ-32: the non-host Leave Room action. `leaving` guards double-clicks;
+  // `leaveError` surfaces any failure (network or non-2xx) as a visible alert
+  // — the player stays in the room on every failure path (AC #4).
+  const [leaving, setLeaving] = useState(false)
+  const [leaveError, setLeaveError] = useState<string | null>(null)
   // Tri-state (Lobby's CYJ-23 pattern): undefined = still resolving — the
   // loading branch renders NO room data, so fixture values can never leak
   // while the fetch is in flight.
@@ -69,6 +74,34 @@ export default function WaitingRoom() {
   // (CYJ-24). Starting needs at least two real players.
   const canStart = players.length >= 2
   const emptySlots = Math.max(room.maxPlayers - players.length, 0)
+  // CYJ-32: host-ness derives from room.ownerId — the SAME field the server
+  // authorizes against (the CYJ-28 settings-screen pattern) — not from the
+  // players list's isHost flag, so the client gate can't drift from
+  // authorization. Only a signed-in non-host gets the Leave Room action;
+  // hosts end the room via close-room (CYJ-23) and signed-out viewers have
+  // no session to leave with (the server would 401 anyway).
+  const isHost = me !== null && room.ownerId === me.id
+
+  const leaveTheRoom = async () => {
+    if (leaving) return
+    setLeaving(true)
+    setLeaveError(null)
+    const res = await leaveRoom(roomId)
+    setLeaving(false)
+    if (res.kind === 'ok') {
+      navigate('/lobby')
+      return
+    }
+    setLeaveError(
+      res.kind === 'unauthorized'
+        ? 'Please sign in to leave the room.'
+        : res.kind === 'forbidden'
+          ? 'You cannot leave this room.'
+          : res.kind === 'not-found'
+            ? 'Room not found.'
+            : res.message,
+    )
+  }
 
   const copyCode = () => {
     try {
@@ -83,9 +116,23 @@ export default function WaitingRoom() {
   return (
     <main className="waiting">
       <header className="waiting-topbar">
-        <Link to="/lobby" className="btn btn-text">
-          ← Lobby
-        </Link>
+        <div className="waiting-topbar-side">
+          <Link to="/lobby" className="btn btn-text">
+            ← Lobby
+          </Link>
+          {me && !isHost && (
+            // CYJ-32: btn-outline (not the primary START GAME button) so a
+            // leave can't be mistaken for starting the game.
+            <button
+              type="button"
+              className="btn btn-outline waiting-leave"
+              disabled={leaving}
+              onClick={() => void leaveTheRoom()}
+            >
+              {leaving ? 'Leaving…' : 'Leave Room'}
+            </button>
+          )}
+        </div>
         <button
           type="button"
           className="btn btn-text"
@@ -111,6 +158,12 @@ export default function WaitingRoom() {
           settings
         </button>
       </header>
+
+      {leaveError && (
+        // AC #4: a failed leave is loud, never a silent no-op — the player
+        // stays in the room and the error is announced to assistive tech.
+        <p role="alert">{leaveError}</p>
+      )}
 
       <section className="waiting-room-info" aria-labelledby="waiting-room-name">
         <h1 id="waiting-room-name" className="waiting-name">
