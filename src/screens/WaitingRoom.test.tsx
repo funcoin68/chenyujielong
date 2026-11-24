@@ -356,3 +356,29 @@ describe('WaitingRoom — full-room observer (CYJ-33)', () => {
     expect(container.textContent).not.toContain('observer')
   })
 })
+
+describe('WaitingRoom — name capitalization (CYJ-35)', () => {
+  const LOWERCASE_PAYLOAD = {
+    ...PAYLOAD,
+    players: [
+      { userId: 'u-host', name: 'host han', avatarUrl: null, isHost: true },
+      { userId: 'u-guest', name: 'greta guest', avatarUrl: 'https://x.test/g.png', isHost: false },
+    ],
+  }
+
+  // AC: every player row renders its name capitalized, avatar initial and
+  // name span alike, whatever case the server payload used.
+  it('renders every player name capitalized in the players list', async () => {
+    const { container } = await renderWaitingRoom('/room/r-real-1', {
+      room: () => Promise.resolve(new Response(JSON.stringify(LOWERCASE_PAYLOAD), { status: 200 })),
+    })
+    const rows = container.querySelectorAll(
+      '.waiting-player-list .waiting-player:not(.waiting-player--empty)',
+    )
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('Host Han')
+    expect(rows[1].textContent).toContain('Greta Guest')
+    expect(container.textContent).not.toContain('host han')
+    expect(container.textContent).not.toContain('greta guest')
+  })
+})

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { capitalizeName } from '../lib/capitalizeName'
 import './RoomSettings.css'
 
 export interface RoomSettingsValues {
@@ -27,10 +28,11 @@ export interface RoomSettingsProps {
 
 /** CYJ-27: first whitespace-separated token + "'s room" ("Wei Chen" →
  *  "Wei's room", "小明" → "小明's room"); empty/missing → '' (the placeholder
- *  shows). */
+ *  shows). CYJ-35: the token is capitalized first, so "wei chen" →
+ *  "Wei's room". */
 export function defaultRoomName(displayName: string | null | undefined): string {
   const first = displayName?.trim().split(/\s+/)[0] ?? ''
-  return first ? `${first}'s room` : ''
+  return first ? `${capitalizeName(first)}'s room` : ''
 }
 
 const TIMER_OPTIONS = [15, 30, 60]

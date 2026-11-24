@@ -395,6 +395,57 @@ describe('Lobby create-room name default (CYJ-27)', () => {
   })
 })
 
+describe('Lobby name capitalization (CYJ-35)', () => {
+  // Same URL-dispatching stub as the CYJ-27 block, with a joined-rooms
+  // handler so the host-name capitalization case can ride one render.
+  function stubFetch(displayName: string | null, joinedRooms: unknown[] = []) {
+    const user = displayName === null ? null : { ...USER, display_name: displayName }
+    const fetchMock = vi.fn((url: string | URL) => {
+      const urlString = String(url)
+      if (urlString.endsWith('/room-authority/active-room')) {
+        return Promise.resolve(new Response('{"room":null}', { status: 200 }))
+      }
+      if (urlString.endsWith('/room-authority/joined-rooms')) {
+        return Promise.resolve(new Response(JSON.stringify({ rooms: joinedRooms }), { status: 200 }))
+      }
+      return Promise.resolve(
+        new Response(user ? JSON.stringify({ user }) : '{"error":"no session"}', {
+          status: user ? 200 : 401,
+        }),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+  }
+
+  // A lowercase Google display_name renders capitalized in the greeting —
+  // the same derivation feeds the avatar, so both capitalize together.
+  it('renders the greeting "Hi, Wei Chen!" for display_name "wei chen"', async () => {
+    stubFetch('wei chen')
+    const container = await renderLobbyWithRoutes('/lobby')
+    expect(container.querySelector('.lobby-greeting')?.textContent).toContain('Hi, Wei Chen!')
+    expect(container.querySelector('.lobby-greeting')?.textContent).not.toContain('Hi, wei chen!')
+  })
+
+  // The CYJ-27 default room name capitalizes the first token too.
+  it('pre-fills "Wei\'s room" for display_name "wei chen"', async () => {
+    stubFetch('wei chen')
+    const container = await renderLobbyWithRoutes('/lobby')
+    await act(async () => {
+      findButton(container, 'Create Room').click()
+    })
+    expect(container.querySelector<HTMLInputElement>('input.room-settings-name')?.value).toBe("Wei's room")
+  })
+
+  // Host names arrive raw from the server — the joined-rooms list capitalizes.
+  it('renders "Host: Host Han" for a lowercase hostName from the server', async () => {
+    stubFetch('Wei Chen', [{ roomId: 'r-j1', code: 'AB23CD', name: 'Chain gang', hostName: 'host han' }])
+    const container = await renderLobbyWithRoutes('/lobby')
+    const section = container.querySelector('[aria-labelledby="lobby-joined-heading"]')
+    expect(section?.textContent).toContain('Host: Host Han')
+    expect(section?.textContent).not.toContain('host han')
+  })
+})
+
 describe('Lobby active room (CYJ-23)', () => {
   const ACTIVE_ROOM = { roomId: 'r-active', code: 'Q4W7EK', name: 'Chain gang', status: 'waiting' }
 
