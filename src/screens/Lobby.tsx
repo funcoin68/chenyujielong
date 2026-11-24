@@ -7,7 +7,7 @@ import { RoomSettings, defaultRoomName, type RoomSettingsValues } from './RoomSe
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import { saveSessionToken } from '../auth/sessionToken'
-import { closeRoom, createRoom, fetchActiveRoom, fetchRoomIdByCode, type ActiveRoom } from '../rooms/roomClient'
+import { closeRoom, createRoom, fetchActiveRoom, fetchRoomIdByCode, joinRoom, type ActiveRoom } from '../rooms/roomClient'
 import './Lobby.css'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -148,6 +148,9 @@ export default function Lobby() {
   // stays mounted and the typed code is preserved automatically (AC #2); the
   // `joining` guard prevents double-submits (CodeInput auto-submits on the 6th
   // char and has no disabled prop).
+  // CYJ-33: after the lookup resolves, EXACTLY ONE room-authority mutation
+  // (join-room) inserts the joiner into room_players before navigating — the
+  // server decides insert vs idempotent rejoin vs full-room observer.
   const [joinError, setJoinError] = useState<string | null>(null)
   const [joining, setJoining] = useState(false)
   const submitJoin = async (code: string) => {
@@ -155,14 +158,27 @@ export default function Lobby() {
     setJoining(true)
     setJoinError(null)
     try {
-      const result = await fetchRoomIdByCode(code)
-      if (result.kind === 'ok') {
-        setJoinOpen(false)
-        navigate(`/room/${result.roomId}`)
-      } else if (result.kind === 'not-found') {
+      const lookup = await fetchRoomIdByCode(code)
+      if (lookup.kind === 'not-found') {
         setJoinError('No room found for that code.')
+        return
+      }
+      if (lookup.kind === 'error') {
+        setJoinError(lookup.message)
+        return
+      }
+      const join = await joinRoom(lookup.roomId)
+      if (join.kind === 'ok') {
+        setJoinOpen(false)
+        navigate(`/room/${lookup.roomId}`)
+      } else if (join.kind === 'unauthorized') {
+        // Joining requires an account — the insert needs a user id.
+        setJoinError('Please sign in to join a room.')
+      } else if (join.kind === 'not-found') {
+        // The room closed between lookup and join — the code is expired.
+        setJoinError('That room is no longer available.')
       } else {
-        setJoinError(result.message)
+        setJoinError(join.message)
       }
     } finally {
       setJoining(false)
