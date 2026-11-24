@@ -7,7 +7,7 @@ import { RoomSettings, defaultRoomName, type RoomSettingsValues } from './RoomSe
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import { saveSessionToken } from '../auth/sessionToken'
-import { closeRoom, createRoom, fetchActiveRoom, type ActiveRoom } from '../rooms/roomClient'
+import { closeRoom, createRoom, fetchActiveRoom, fetchRoomIdByCode, type ActiveRoom } from '../rooms/roomClient'
 import './Lobby.css'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -141,6 +141,31 @@ export default function Lobby() {
       }
     } finally {
       setCreating(false)
+    }
+  }
+
+  // CYJ-31: real join-by-code. The modal stays open on failure so CodeInput
+  // stays mounted and the typed code is preserved automatically (AC #2); the
+  // `joining` guard prevents double-submits (CodeInput auto-submits on the 6th
+  // char and has no disabled prop).
+  const [joinError, setJoinError] = useState<string | null>(null)
+  const [joining, setJoining] = useState(false)
+  const submitJoin = async (code: string) => {
+    if (joining) return
+    setJoining(true)
+    setJoinError(null)
+    try {
+      const result = await fetchRoomIdByCode(code)
+      if (result.kind === 'ok') {
+        setJoinOpen(false)
+        navigate(`/room/${result.roomId}`)
+      } else if (result.kind === 'not-found') {
+        setJoinError('No room found for that code.')
+      } else {
+        setJoinError(result.message)
+      }
+    } finally {
+      setJoining(false)
     }
   }
 
@@ -331,7 +356,12 @@ export default function Lobby() {
 
       {/* S4 — Join with Code modal */}
       <Modal open={joinOpen} onClose={() => setJoinOpen(false)} title="Join with Code">
-        <CodeInput label="Room code" onComplete={() => navigate(`/room/${ROOM.id}`)} />
+        {joinError && (
+          <p className="lobby-create-error" role="alert">
+            {joinError}
+          </p>
+        )}
+        <CodeInput label="Room code" onComplete={submitJoin} />
         <p className="lobby-join-hint">or open an invite link</p>
       </Modal>
 

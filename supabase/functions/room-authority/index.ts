@@ -4,12 +4,14 @@
 // resolution, PostgREST IO, and HTTP responses; src/lib/room/ owns every
 // branch decision (400/401/200/500 mapping).
 import { generateRoomCode } from '../../../src/lib/room/code.ts'
+import { isWellFormedRoomCode } from '../../../src/lib/room/code.ts'
 import { createRoomDecision, parseCreateRoomBody } from '../../../src/lib/room/createRoom.ts'
 import type { RoomSettingsInput } from '../../../src/lib/room/createRoom.ts'
 import { activeRoomDecision } from '../../../src/lib/room/activeRoom.ts'
 import { closeRoomDecision, parseCloseRoomBody } from '../../../src/lib/room/closeRoom.ts'
 import { getRoomDecision } from '../../../src/lib/room/getRoom.ts'
 import type { RoomPlayerRow } from '../../../src/lib/room/getRoom.ts'
+import { lookupRoomByCodeDecision } from '../../../src/lib/room/lookupRoomByCode.ts'
 import { parseUpdateRoomBody, updateRoomDecision } from '../../../src/lib/room/updateRoom.ts'
 import { resolveUserId } from '../../../src/lib/auth/session.ts'
 
@@ -80,6 +82,23 @@ async function selectRoomById(roomId: string): Promise<SelectResult> {
     return { ok: false }
   }
   return { ok: true, row: ((await res.json()) as RoomRow[])?.[0] ?? null }
+}
+
+// CYJ-31: the join-by-code lookup returns ONLY id+code — the smallest payload
+// that lets the client navigate to /room/:roomId (full room+players stays on
+// GET /room/<id>, CYJ-24), minimizing this unauthenticated endpoint's surface.
+type CodeLookupResult = { ok: true; row: { id: string; code: string } | null } | { ok: false }
+
+async function selectRoomIdByCode(code: string): Promise<CodeLookupResult> {
+  // The code is client-supplied (path segment) — encode before interpolating
+  // (CYJ-23 discipline). Well-formedness is the decision layer's job; this
+  // query only ever runs for codes that passed the alphabet check.
+  const res = await rest(`/rooms?code=eq.${encodeURIComponent(code)}&select=id,code&limit=1`)
+  if (!res.ok) {
+    console.error(`room-authority: room-by-code lookup failed: HTTP ${res.status}`)
+    return { ok: false }
+  }
+  return { ok: true, row: ((await res.json()) as { id: string; code: string }[])?.[0] ?? null }
 }
 
 async function insertRoom(
@@ -194,6 +213,10 @@ const RATE_WINDOW_MS = 60_000
 const CREATE_MAX_PER_WINDOW = 5
 const CLOSE_MAX_PER_WINDOW = 10
 const UPDATE_MAX_PER_WINDOW = 10
+// CYJ-31: bound the code-collision retry (see handleCreateRoom). 32^6 ≈ 1.07B
+// possible codes, so three fresh draws make a persistent collision effectively
+// impossible; beyond the bound the decision layer returns an explicit 409.
+const MAX_INSERT_ATTEMPTS = 3
 const createHits = new Map<string, number[]>()
 const closeHits = new Map<string, number[]>()
 const updateHits = new Map<string, number[]>()
@@ -266,27 +289,46 @@ async function handleCreateRoom(req: Request): Promise<Response> {
     return json({ error: 'too many rooms created, try again in a minute' }, 429, headers)
   }
 
-  const inserted = await insertRoom(userId, parsed.settings)
-  if (inserted.row) {
-    // CYJ-24: the owner is the room's first player (host). A failure here
-    // leaves a room with an empty player list — loud 500 (rule 12), never a
-    // silent partial success.
-    if (!(await insertRoomPlayer(inserted.row.id, userId))) {
+  // CYJ-31: a 409 means one of TWO unique constraints fired — the
+  // one-active-room partial index (a concurrent create won; the re-select
+  // returns the winner's room) or rooms.code unique (a code collision).
+  // Only the second is retryable, and only when the re-select affirms no
+  // active room exists. Bounded at MAX_INSERT_ATTEMPTS with a fresh code per
+  // insert (insertRoom draws a new generateRoomCode() each call), then the
+  // decision layer's explicit 409 — never a 500 or a silent success.
+  for (let attempt = 0; attempt < MAX_INSERT_ATTEMPTS; attempt++) {
+    const inserted = await insertRoom(userId, parsed.settings)
+    if (inserted.row) {
+      // CYJ-24: the owner is the room's first player (host). A failure here
+      // leaves a room with an empty player list — loud 500 (rule 12), never a
+      // silent partial success.
+      if (!(await insertRoomPlayer(inserted.row.id, userId))) {
+        return json(createRoomDecision({ userId, room: null }).body, 500, headers)
+      }
+      return json(createRoomDecision({ userId, created: inserted.row }).body, 200, headers)
+    }
+    if (!inserted.conflict) {
+      // Non-409 insert failure — fail loudly (rule 12), never silently.
       return json(createRoomDecision({ userId, room: null }).body, 500, headers)
     }
-    return json(createRoomDecision({ userId, created: inserted.row }).body, 200, headers)
-  }
-  if (inserted.conflict) {
-    // Re-select after the 409: the index guarantees exactly one active row
-    // now exists, so this returns the winner's room with 200 (AC #2/#3).
+    // Re-select after the 409: the partial index guarantees exactly one
+    // active row now exists, so this returns the winner's room (AC #2/#3).
     const winner = await selectActiveRoom(userId)
-    if (winner.ok && winner.row) {
+    if (!winner.ok) {
+      // A failed re-select is a loud 500 (rule 12), never a retry that could
+      // mask a PostgREST outage as a code collision.
+      return json({ error: 'active room lookup failed' }, 500, headers)
+    }
+    if (winner.row) {
       return json(createRoomDecision({ userId, room: winner.row }).body, 200, headers)
     }
+    // No winner after a 409: rooms.code unique fired, not the partial index —
+    // retry the insert with a fresh code (loop).
   }
-  // Non-409 insert failure, or a lost 409 race that broke the index
-  // invariant — fail loudly (rule 12), never silently.
-  return json(createRoomDecision({ userId, room: null }).body, 500, headers)
+  // Persistent code collision across every attempt — the decision layer's
+  // explicit 409 (AC #3), not a 500.
+  const decision = createRoomDecision({ userId, room: null, codeConflict: true })
+  return json(decision.body, decision.status, headers)
 }
 
 // CYJ-23: read-only view of the caller's active room for the Lobby section.
@@ -367,6 +409,25 @@ async function handleGetRoom(roomId: string): Promise<Response> {
       }),
     ),
   })
+  return json(decision.body, decision.status, headers)
+}
+
+// CYJ-31: the join-by-code lookup. Public read — a room code is shareable by
+// design, and the response carries only {roomId, code} (less identity than the
+// existing GET /room/<id>), so no session is required; brute-force is bounded
+// by 32^6 ≈ 1.07B codes (CYJ-24's read-routes convention: unthrottled).
+// Malformed codes skip the PostgREST round trip and are the decision layer's
+// 400; an affirmative no-row is its 404 (AC #4); only a failed PostgREST
+// lookup is this transport's loud 500 (CYJ-23), never a fake 404.
+async function handleLookupByCode(code: string): Promise<Response> {
+  const headers = withCors(new Headers())
+  const selected = isWellFormedRoomCode(code)
+    ? await selectRoomIdByCode(code)
+    : { ok: true as const, row: null }
+  if (!selected.ok) {
+    return json({ error: 'room lookup failed' }, 500, headers)
+  }
+  const decision = lookupRoomByCodeDecision({ code, room: selected.row })
   return json(decision.body, decision.status, headers)
 }
 
@@ -549,6 +610,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json({ error: 'method not allowed' }, 405, withCors(new Headers()))
     }
     return handleActiveRoom(req)
+  }
+  // CYJ-31: GET /room-authority/room-by-code/<code> — join-by-code lookup.
+  // A distinct segment from /room/<id> below: that route is UUID-keyed and its
+  // threat model explicitly refuses codes (CYJ-24), so the two contracts never
+  // shadow each other.
+  const byCodeMatch = path.match(/\/room-authority\/room-by-code\/([^/]+)$/)
+  if (byCodeMatch) {
+    if (req.method !== 'GET') {
+      return json({ error: 'method not allowed' }, 405, withCors(new Headers()))
+    }
+    return handleLookupByCode(byCodeMatch[1])
   }
   // CYJ-24: GET /room-authority/room/<roomId> — same pattern as /active-room:
   // routed before the POST gate, GET enforced here.

@@ -14,3 +14,16 @@ export function generateRoomCode(length: number = ROOM_CODE_LENGTH): string {
   crypto.getRandomValues(bytes)
   return Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).join('')
 }
+
+/**
+ * CYJ-31: the one home for "is this a plausible room code" — uppercase, exactly
+ * ROOM_CODE_LENGTH, every character in the unambiguous ALPHABET (rejects
+ * O/0/I/1 and lowercase). Lives next to the generator so the validator and the
+ * generator can never drift on the alphabet (rules 7/11).
+ */
+export function isWellFormedRoomCode(code: string): boolean {
+  return (
+    code.length === ROOM_CODE_LENGTH &&
+    Array.from(code).every((ch) => ALPHABET.includes(ch))
+  )
+}
