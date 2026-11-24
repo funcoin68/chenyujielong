@@ -534,13 +534,25 @@ describe('Lobby active room (CYJ-23)', () => {
 describe('Lobby join by code (CYJ-31)', () => {
   // Dispatches by URL like the CYJ-17 block: /auth/me and active-room answer
   // the mount-time fetches; room-by-code answers with the per-test handler.
-  function stubFetch(lookupHandler: (url: string) => Promise<Response>) {
+  // CYJ-33: the join-room mutation answers with a per-test handler too
+  // (default 200) and its calls are recorded — AC #1 asserts EXACTLY ONE
+  // mutation per successful join, and the failure tests assert none.
+  function stubFetch(
+    lookupHandler: (url: string) => Promise<Response>,
+    joinHandler: (init?: RequestInit) => Promise<Response> = () =>
+      Promise.resolve(new Response(JSON.stringify({ roomId: 'r-joined' }), { status: 200 })),
+  ) {
     const lookupCalls: string[] = []
-    const fetchMock = vi.fn((url: string | URL) => {
+    const joinCalls: { url: string; init?: RequestInit }[] = []
+    const fetchMock = vi.fn((url: string | URL, init?: RequestInit) => {
       const urlString = String(url)
       if (urlString.includes('/room-authority/room-by-code/')) {
         lookupCalls.push(urlString)
         return lookupHandler(urlString)
+      }
+      if (urlString.endsWith('/room-authority/join-room')) {
+        joinCalls.push({ url: urlString, init })
+        return joinHandler(init)
       }
       if (urlString.endsWith('/room-authority/active-room')) {
         return Promise.resolve(new Response('{"room":null}', { status: 200 }))
@@ -548,7 +560,7 @@ describe('Lobby join by code (CYJ-31)', () => {
       return Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))
     })
     vi.stubGlobal('fetch', fetchMock)
-    return { lookupCalls }
+    return { lookupCalls, joinCalls }
   }
 
   // CodeInput auto-submits on the 6th character; a paste fills all six boxes
@@ -574,10 +586,11 @@ describe('Lobby join by code (CYJ-31)', () => {
     return dialog as HTMLElement
   }
 
-  // AC #1: a valid code triggers the room-authority lookup keyed by that code
-  // and navigates to /room/:roomId.
-  it('valid code: looks up the room by code and navigates to /room/:roomId', async () => {
-    const { lookupCalls } = stubFetch(() =>
+  // AC #1 (CYJ-33): a valid code triggers the room-authority lookup keyed by
+  // that code, then EXACTLY ONE join-room mutation inserting the joiner into
+  // room_players for the looked-up room, then navigation to /room/:roomId.
+  it('valid code: looks up the room, issues exactly one join mutation, and navigates', async () => {
+    const { lookupCalls, joinCalls } = stubFetch(() =>
       Promise.resolve(
         new Response(JSON.stringify({ roomId: 'r-joined', code: 'AB23CD' }), { status: 200 }),
       ),
@@ -587,21 +600,25 @@ describe('Lobby join by code (CYJ-31)', () => {
 
     expect(lookupCalls).toHaveLength(1)
     expect(lookupCalls[0]).toContain('/room-authority/room-by-code/AB23CD')
+    expect(joinCalls).toHaveLength(1)
+    expect(JSON.parse(String(joinCalls[0].init?.body))).toEqual({ roomId: 'r-joined' })
     expect(container.querySelector('[data-testid="room-page"]')?.textContent).toBe(
       'ROOM PAGE r-joined',
     )
   })
 
-  // AC #2: an unknown code shows the inline error, the user stays on the form
-  // with the typed code preserved, and no navigation occurs.
-  it('unknown code: inline error, input preserved, no navigation', async () => {
-    const { lookupCalls } = stubFetch(() =>
+  // AC #2 (CYJ-31): an unknown code shows the inline error, the user stays on
+  // the form with the typed code preserved, and no navigation occurs. CYJ-33:
+  // no join mutation is ever issued for an unknown code (AC #5).
+  it('unknown code: inline error, input preserved, no navigation, no join mutation', async () => {
+    const { lookupCalls, joinCalls } = stubFetch(() =>
       Promise.resolve(new Response('{"error":"no room found for that code"}', { status: 404 })),
     )
     const container = await renderLobbyWithRoutes('/lobby')
     const dialog = await pasteCode(container, 'ZZZZZZ')
 
     expect(lookupCalls).toHaveLength(1)
+    expect(joinCalls).toHaveLength(0)
     const alert = dialog.querySelector('[role="alert"]')
     expect(alert?.textContent).toContain('No room found for that code.')
     // no navigation: no room page, the URL probe still reports /lobby
@@ -612,6 +629,64 @@ describe('Lobby join by code (CYJ-31)', () => {
     const boxes = Array.from(dialog.querySelectorAll<HTMLInputElement>('input.code-input-box'))
     expect(boxes).toHaveLength(6)
     expect(boxes.map((b) => b.value).join('')).toBe('ZZZZZZ')
+  })
+
+  // AC #5 (CYJ-33): the room closed between lookup and join (expired code) —
+  // the join 404 surfaces a client-visible error and no navigation occurs.
+  it('join not-found (room closed mid-flow): inline expired message, no navigation', async () => {
+    const { joinCalls } = stubFetch(
+      () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ roomId: 'r-closed', code: 'AB23CD' }), { status: 200 }),
+        ),
+      () => Promise.resolve(new Response('{"error":"room has closed"}', { status: 404 })),
+    )
+    const container = await renderLobbyWithRoutes('/lobby')
+    const dialog = await pasteCode(container, 'AB23CD')
+
+    expect(joinCalls).toHaveLength(1)
+    const alert = dialog.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('That room is no longer available.')
+    expect(container.querySelector('[data-testid="room-page"]')).toBeNull()
+    expect(container.querySelector('[data-testid="url-probe"]')?.textContent).toBe('/lobby')
+  })
+
+  // Joining requires an account (the insert needs a user id) — a 401 from
+  // join-room shows the sign-in message inline, no navigation.
+  it('join 401: shows the sign-in message inline and does not navigate', async () => {
+    stubFetch(
+      () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ roomId: 'r-joined', code: 'AB23CD' }), { status: 200 }),
+        ),
+      () => Promise.resolve(new Response('{"error":"no session"}', { status: 401 })),
+    )
+    const container = await renderLobbyWithRoutes('/lobby')
+    const dialog = await pasteCode(container, 'AB23CD')
+
+    const alert = dialog.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('Please sign in to join a room.')
+    expect(container.querySelector('[data-testid="room-page"]')).toBeNull()
+    expect(container.querySelector('[data-testid="url-probe"]')?.textContent).toBe('/lobby')
+  })
+
+  // A join transport failure surfaces its message inline (rule 12) — no
+  // navigation, no silent swallow.
+  it('join failure: shows the server message inline and does not navigate', async () => {
+    stubFetch(
+      () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ roomId: 'r-joined', code: 'AB23CD' }), { status: 200 }),
+        ),
+      () => Promise.resolve(new Response('{"error":"room join failed"}', { status: 500 })),
+    )
+    const container = await renderLobbyWithRoutes('/lobby')
+    const dialog = await pasteCode(container, 'AB23CD')
+
+    const alert = dialog.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('room join failed')
+    expect(container.querySelector('[data-testid="room-page"]')).toBeNull()
+    expect(container.querySelector('[data-testid="url-probe"]')?.textContent).toBe('/lobby')
   })
 
   // A server/transport failure surfaces its message inline, same discipline

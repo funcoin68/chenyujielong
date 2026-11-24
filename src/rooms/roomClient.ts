@@ -401,6 +401,60 @@ export async function leaveRoom(roomId: string): Promise<LeaveRoomResult> {
   return { kind: 'error', message: `could not leave room${detail}` }
 }
 
+export type JoinRoomResult =
+  | { kind: 'ok' }
+  | { kind: 'unauthorized' }
+  | { kind: 'not-found' }
+  | { kind: 'error'; message: string }
+
+/**
+ * CYJ-33: join a room by its id — the single room-authority mutation of the
+ * join-by-code flow (the Lobby chains it after the CYJ-31 code lookup). The
+ * server decides rejoin-vs-insert-vs-observer; an observer still gets ok (the
+ * WaitingRoom derives the notice from the players list), so ok carries no
+ * payload. A 404 means the room closed between lookup and join — a DISTINCT
+ * result so the join form can show the expired-room message inline. Same
+ * transport as leaveRoom (cookie + x-cyj-session fallback).
+ */
+export async function joinRoom(roomId: string): Promise<JoinRoomResult> {
+  if (!FUNCTIONS_URL) return { kind: 'error', message: 'game server is not configured' }
+  const token = readSessionToken()
+  let res: Response
+  try {
+    res = await fetch(`${FUNCTIONS_URL}/room-authority/join-room`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'x-cyj-session': token } : {}),
+      },
+      body: JSON.stringify({ roomId }),
+    })
+  } catch (err) {
+    return { kind: 'error', message: `network error: ${String(err)}` }
+  }
+  if (res.status === 401) {
+    await res.body?.cancel()
+    return { kind: 'unauthorized' }
+  }
+  if (res.status === 404) {
+    await res.body?.cancel()
+    return { kind: 'not-found' }
+  }
+  if (res.ok) {
+    await res.body?.cancel()
+    return { kind: 'ok' }
+  }
+  let body: { error?: unknown } = {}
+  try {
+    body = await res.json()
+  } catch {
+    /* non-JSON error body — fall through to the status-based message */
+  }
+  const detail = typeof body.error === 'string' ? `: ${body.error}` : ` (HTTP ${res.status})`
+  return { kind: 'error', message: `could not join room${detail}` }
+}
+
 export type UpdateRoomResult =
   | { kind: 'ok' }
   | { kind: 'unauthorized' }

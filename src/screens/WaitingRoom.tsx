@@ -81,6 +81,14 @@ export default function WaitingRoom() {
   // hosts end the room via close-room (CYJ-23) and signed-out viewers have
   // no session to leave with (the server would 401 anyway).
   const isHost = me !== null && room.ownerId === me.id
+  // CYJ-33: a signed-in caller with no room_players row in a FULL room is an
+  // observer — the join flow navigated them here but inserted no row (AC #6).
+  // Derived from the same players list + maxPlayers the server's decision
+  // used (the join response carries no observer flag), so the notice survives
+  // a page refresh. Membership also gates Leave Room: an observer has no row,
+  // so Leave would 403 — hiding it avoids that dead end.
+  const isMember = me !== null && players.some((p) => p.userId === me.id)
+  const isObserver = me !== null && !isMember && players.length >= room.maxPlayers
 
   const leaveTheRoom = async () => {
     if (leaving) return
@@ -120,7 +128,7 @@ export default function WaitingRoom() {
           <Link to="/lobby" className="btn btn-text">
             ← Lobby
           </Link>
-          {me && !isHost && (
+          {me && !isHost && isMember && (
             // CYJ-32: btn-outline (not the primary START GAME button) so a
             // leave can't be mistaken for starting the game.
             <button
@@ -209,6 +217,13 @@ export default function WaitingRoom() {
         <button type="button" className="btn btn-outline">
           Share invite link
         </button>
+        {isObserver && (
+          // AC #6: full-room joiners land here without a room_players row —
+          // say so visibly instead of letting them wonder where they are.
+          <p className="waiting-observer" role="status">
+            This room is full — you&apos;re an observer.
+          </p>
+        )}
       </section>
 
       <section aria-labelledby="waiting-players-heading">

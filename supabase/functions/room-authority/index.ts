@@ -12,6 +12,7 @@ import { closeRoomDecision, parseCloseRoomBody } from '../../../src/lib/room/clo
 import { leaveRoomDecision, parseLeaveRoomBody } from '../../../src/lib/room/leaveRoom.ts'
 import { getRoomDecision } from '../../../src/lib/room/getRoom.ts'
 import type { RoomPlayerRow } from '../../../src/lib/room/getRoom.ts'
+import { joinRoomDecision, parseJoinRoomBody } from '../../../src/lib/room/joinRoom.ts'
 import { lookupRoomByCodeDecision } from '../../../src/lib/room/lookupRoomByCode.ts'
 import { parseUpdateRoomBody, updateRoomDecision } from '../../../src/lib/room/updateRoom.ts'
 import { resolveUserId } from '../../../src/lib/auth/session.ts'
@@ -156,20 +157,34 @@ async function insertRoom(
 // after a successful room insert is surfaced loudly (rule 12) as a 500 — the
 // residual is a room whose player list is empty (visible in the WaitingRoom
 // as 0 players), never fixture data and never a silent partial success.
-async function insertRoomPlayer(roomId: string, userId: string): Promise<boolean> {
+// CYJ-33: generalized to take isHost so the join path inserts non-host rows
+// through the same function; a 409 (unique(room_id, user_id) — a concurrent
+// same-user join) is reported as `conflict` so the join transport can treat
+// it as an idempotent 200 while the create path still fails loudly.
+type InsertPlayerResult = { ok: true } | { ok: false; conflict: boolean }
+
+async function insertRoomPlayer(
+  roomId: string,
+  userId: string,
+  isHost: boolean,
+): Promise<InsertPlayerResult> {
   const res = await rest('/room_players', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ room_id: roomId, user_id: userId, is_host: true }),
+    body: JSON.stringify({ room_id: roomId, user_id: userId, is_host: isHost }),
   })
+  if (res.status === 409) {
+    await res.body?.cancel()
+    return { ok: false, conflict: true }
+  }
   if (!res.ok) {
     // CYJ-24 review (round 2, security): status only — the PostgREST error
     // body can echo constraint names/SQL detail into edge-function logs
     // (same discipline as selectRoomWithPlayers).
-    console.error(`room-authority: host player insert failed: HTTP ${res.status}`)
-    return false
+    console.error(`room-authority: player insert failed: HTTP ${res.status}`)
+    return { ok: false, conflict: false }
   }
-  return true
+  return { ok: true }
 }
 
 // CYJ-24: one PostgREST round trip for the WaitingRoom — the room row plus its
@@ -233,6 +248,7 @@ const CREATE_MAX_PER_WINDOW = 5
 const CLOSE_MAX_PER_WINDOW = 10
 const UPDATE_MAX_PER_WINDOW = 10
 const LEAVE_MAX_PER_WINDOW = 10
+const JOIN_MAX_PER_WINDOW = 10
 // CYJ-31: bound the code-collision retry (see handleCreateRoom). 32^6 ≈ 1.07B
 // possible codes, so three fresh draws make a persistent collision effectively
 // impossible; beyond the bound the decision layer returns an explicit 409.
@@ -241,6 +257,7 @@ const createHits = new Map<string, number[]>()
 const closeHits = new Map<string, number[]>()
 const updateHits = new Map<string, number[]>()
 const leaveHits = new Map<string, number[]>()
+const joinHits = new Map<string, number[]>()
 
 function writeThrottled(
   hits: Map<string, number[]>,
@@ -323,7 +340,7 @@ async function handleCreateRoom(req: Request): Promise<Response> {
       // CYJ-24: the owner is the room's first player (host). A failure here
       // leaves a room with an empty player list — loud 500 (rule 12), never a
       // silent partial success.
-      if (!(await insertRoomPlayer(inserted.row.id, userId))) {
+      if (!(await insertRoomPlayer(inserted.row.id, userId, true)).ok) {
         return json(createRoomDecision({ userId, room: null }).body, 500, headers)
       }
       return json(createRoomDecision({ userId, created: inserted.row }).body, 200, headers)
@@ -602,6 +619,90 @@ async function handleLeaveRoom(req: Request): Promise<Response> {
   return json(decision.body, 200, headers)
 }
 
+// CYJ-33: a signed-in user joins a room — the ONLY writer of non-host
+// room_players rows. Mirrors handleLeaveRoom step for step: auth boundary →
+// parse → room+players select → decision (401/404/observer/rejoin BEFORE any
+// write) → post-decision throttle → INSERT. One PostgREST round trip
+// (selectRoomWithPlayers, CYJ-24) yields the room and its players, so the
+// membership check and the capacity check derive from the same embedded list
+// the decision layer consumes.
+//
+// Known race (accepted for this ticket, documented in the CYJ-33 proposal):
+// the capacity check is select-then-insert across two PostgREST calls with no
+// transaction, so two users grabbing the LAST slot concurrently can both
+// insert, transiently exceeding max_players by one. Bounded and visible in
+// the WaitingRoom count; the unique(room_id, user_id) constraint still
+// guarantees no duplicate rows (AC #4) under concurrency. A DB-level cap is
+// flagged as follow-up work.
+async function handleJoinRoom(req: Request): Promise<Response> {
+  const headers = withCors(new Headers())
+
+  // Auth boundary first, same as the other write routes: a session-less
+  // caller gets 401 regardless of body shape.
+  const session = await resolveUserId(
+    req.headers.get('cookie'),
+    req.headers.get('x-cyj-session'),
+    lookupSession,
+  )
+  if (session.kind !== 'ok') {
+    return json({ error: 'no session' }, 401, headers)
+  }
+  const userId = session.row.user_id
+
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return json({ error: 'request body must be JSON' }, 400, headers)
+  }
+  const parsed = parseJoinRoomBody(body)
+  if (!parsed.ok) {
+    return json({ error: parsed.reason }, 400, headers)
+  }
+
+  const selected = await selectRoomWithPlayers(parsed.roomId)
+  if (!selected.ok) {
+    console.error(`room-authority: join-room lookup failed for room ${parsed.roomId}`)
+    return json({ error: 'room lookup failed' }, 500, headers)
+  }
+  const row = selected.row
+  const membershipRow = row?.room_players.find((p) => p.user_id === userId) ?? null
+  const decision = joinRoomDecision({
+    userId,
+    room: row ? { id: row.id, status: row.status, maxPlayers: row.max_players } : null,
+    membership: membershipRow
+      ? { userId: membershipRow.user_id, isHost: membershipRow.is_host }
+      : null,
+    playerCount: row?.room_players.length ?? 0,
+  })
+  if (decision.status !== 200) {
+    return json(decision.body, decision.status, headers)
+  }
+  if (!decision.write) {
+    // Idempotent rejoin (AC #4) or full-room observer (AC #6) — no insert.
+    return json(decision.body, 200, headers)
+  }
+
+  // Same throttle discipline as leave-room: only requests that passed auth,
+  // validation, and the membership/capacity decision count against the
+  // budget.
+  if (writeThrottled(joinHits, userId, JOIN_MAX_PER_WINDOW)) {
+    return json({ error: 'too many join requests, try again in a minute' }, 429, headers)
+  }
+
+  const inserted = await insertRoomPlayer(parsed.roomId, userId, false)
+  if (!inserted.ok) {
+    if (inserted.conflict) {
+      // A concurrent same-user join won the race — unique(room_id, user_id)
+      // fired. Idempotent 200 (AC #4), never a duplicate row.
+      return json(decision.body, 200, headers)
+    }
+    // Loud 500 (rule 12) — never a silent partial join.
+    return json({ error: 'room join failed' }, 500, headers)
+  }
+  return json(decision.body, 200, headers)
+}
+
 // CYJ-28: host-only settings persistence. Mirrors handleCloseRoom step for
 // step: auth boundary → parse → select → ownership decision (403 before any
 // write) → throttle (post-decision only) → PATCH with the owner predicate as
@@ -734,5 +835,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (path.endsWith('/close-room')) return handleCloseRoom(req)
   if (path.endsWith('/update-room')) return handleUpdateRoom(req)
   if (path.endsWith('/leave-room')) return handleLeaveRoom(req)
+  if (path.endsWith('/join-room')) return handleJoinRoom(req)
   return json({ error: 'not found' }, 404, withCors(new Headers()))
 })

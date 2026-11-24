@@ -33,6 +33,14 @@
   font-size: 28px;
 }
 
+/* CYJ-33: full-room joiners land here without a room_players row (AC #6). */
+.waiting-observer {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 14px;
+  text-align: center;
+}
+
 .waiting-code {
   display: flex;
   align-items: center;
