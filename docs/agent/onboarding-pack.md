@@ -2,7 +2,7 @@
 <!-- GENERATED FILE — do not edit by hand. Narrative sections come from
      docs/agent/pack-curated.md; mechanical sections from git. Regenerate:
      python scripts/build_context_pack.py (nightly workflow opens the PR). -->
-<!-- source commit: 1617ca1 · generated: 2026-11-23 · pack owner: funcoin68 -->
+<!-- source commit: fe3c73c · generated: 2026-11-24 · pack owner: funcoin68 -->
 
 ## 0. Mission
 成语接龙 (Chinese idiom-chain) multiplayer web game — players take turns
@@ -12,9 +12,9 @@ infrastructure (scripts/, .github/workflows/) lives in the same repo as the
 game. Keep game code and pipeline code conceptually separate.
 
 ## 1. Module map
-- `src/lib/` (15 files) — Shared rule primitives (Deno Edge Function + Vitest both import). chain.test.ts, chain.ts, code.test.ts, code.ts, createRoom.test.ts, createRoom.ts, edgeCallback.test.ts, flow.test.ts … (+7)
-- `src/lib/auth/` (7 files) — Google OAuth flow + session logic (shared Deno + Vitest, CYJ-7). edgeCallback.test.ts, flow.test.ts, flow.ts, googleIdToken.test.ts, googleIdToken.ts, session.test.ts, session.ts
-- `src/screens/` (19 files) — Route-level screens (spec §3). AuthCallback.css, AuthCallback.test.tsx, AuthCallback.tsx, Gameplay.css, Gameplay.tsx, Landing.css, Landing.test.tsx, Landing.tsx … (+11)
+- `src/lib/` (26 files) — Shared rule primitives (Deno Edge Function + Vitest both import). activeRoom.test.ts, activeRoom.ts, chain.test.ts, chain.ts, closeRoom.test.ts, closeRoom.ts, code.test.ts, code.ts … (+18)
+- `src/lib/auth/` (8 files) — Google OAuth flow + session logic (shared Deno + Vitest, CYJ-7). edgeCallback.test.ts, flow.test.ts, flow.ts, googleIdToken.test.ts, googleIdToken.ts, session.test.ts, session.ts, sessionResolutionShared.test.ts
+- `src/screens/` (23 files) — Route-level screens (spec §3). AuthCallback.css, AuthCallback.test.tsx, AuthCallback.tsx, Gameplay.css, Gameplay.tsx, Landing.css, Landing.test.tsx, Landing.tsx … (+15)
 - `src/ui/` (13 files) — Reusable components (one CSS per component). ChainView.css, ChainView.tsx, CodeInput.css, CodeInput.tsx, IdiomTile.css, IdiomTile.tsx, Modal.css, Modal.test.tsx … (+5)
 - `src/mock/` (1 files) — Fixture data — the entire current 'backend'. data.ts
 - `supabase/functions/` (4 files) — Edge Functions (Deno; transport-only, rules in src/lib). README.md, index.ts, index.ts, index.ts
@@ -22,7 +22,7 @@ game. Keep game code and pipeline code conceptually separate.
 - `.github/workflows/` (12 files) — PIPELINE workflows — human-owned, agents never edit. ci-pr-gates.yml, conflict-resolver.yml, onboarding-pack.yml, review-agent.yml, stage10-learn.yml, stage3-proposal.yml, stage3-respond.yml, stage5-implement.yml … (+4)
 - `docs/agent/` (4 files) — Agent memory (this pack, CORRECTIONS.md). CORRECTIONS.md, CYJ-6-implementation-notes.md, onboarding-pack.md, pack-curated.md
 - `agent/` (8 files) — Agent instruction prompts per stage. conflict-resolution-instructions.md, fix-instructions.md, implementation-instructions.md, proposal-instructions.md, proposal-template.md, review-functional.md, review-security.md, review-standards.md
-- repo root — CLAUDE.md, eslint.config.js, fix-45-post-proposal-parse-diagnostics.sh, fix-46-block-requests-stage7-fix.sh, fix-47-pack-curated-drift.sh, index.html, package.json, repo-registry.yaml, tsconfig.json, vercel.json, vite.config.ts
+- repo root — CLAUDE.md, eslint.config.js, index.html, package.json, repo-registry.yaml, tsconfig.json, vercel.json, vite.config.ts
 
 ## 2. Request lifecycle
 Current state (post CYJ-7): App.tsx mounts react-router routes; gameplay
@@ -60,7 +60,7 @@ apply (CLAUDE.md). Planned entities NOT yet migrated: rooms, players, moves.
 Trust the mechanical migrations list below over this prose.
 
 ### Migrations on disk (mechanical — regenerated every run; trust this over any prose above)
-- `supabase/migrations/` — 2 file(s): `20261122000000_auth_users_sessions.sql`, `20261123000000_rooms.sql`
+- `supabase/migrations/` — 4 file(s): `20261122000000_auth_users_sessions.sql`, `20261123000000_rooms.sql`, `20261123000001_session_cap.sql`, `20261124000000_room_players.sql`
 
 ## 4. API / interface contracts
 - POST /functions/v1/validate-move — body {previousIdiom: string, move: string}.
@@ -111,52 +111,52 @@ Trust the mechanical migrations list below over this prose.
 
 ## 7. Hotspots & ownership
 App code (most-changed first, last 90d — high churn = review carefully, keep tests close):
-- `src/screens/Lobby.tsx` — 10 commits
+- `src/screens/Lobby.tsx` — 18 commits
+- `src/screens/Lobby.test.tsx` — 16 commits
+- `supabase/functions/room-authority/index.ts` — 14 commits
+- `src/screens/Landing.test.tsx` — 9 commits
+- `supabase/functions/auth/index.ts` — 9 commits
 - `src/screens/Landing.tsx` — 9 commits
-- `src/screens/Lobby.test.tsx` — 8 commits
-- `supabase/functions/auth/index.ts` — 8 commits
-- `src/screens/Landing.test.tsx` — 7 commits
+- `src/rooms/roomClient.ts` — 8 commits
+- `src/auth/sessionClient.ts` — 8 commits
+- `src/auth/sessionClient.test.ts` — 7 commits
+- `src/App.render.test.tsx` — 6 commits
 - `src/lib/auth/flow.test.ts` — 6 commits
 - `src/lib/auth/flow.ts` — 6 commits
-- `src/auth/sessionClient.ts` — 5 commits
-- `package.json` — 5 commits
-- `src/App.render.test.tsx` — 4 commits
-- `src/lib/auth/session.test.ts` — 4 commits
-- `src/lib/auth/session.ts` — 4 commits
-- `src/auth/sessionClient.test.ts` — 4 commits
-- `src/screens/Landing.css` — 3 commits
-- `src/screens/Lobby.css` — 3 commits
+- `src/screens/Lobby.css` — 5 commits
+- `src/lib/auth/session.test.ts` — 5 commits
+- `src/lib/auth/session.ts` — 5 commits
 
 Pipeline infrastructure (churn here = pipeline debugging, not app risk):
 - `.github/workflows/stage5-implement.yml` — 11 commits
 - `.github/workflows/stage7-fix.yml` — 9 commits
 - `.github/workflows/stage8b-qa-evidence.yml` — 9 commits
+- `scripts/post_proposal.py` — 8 commits
 - `.github/workflows/ci-pr-gates.yml` — 8 commits
-- `scripts/post_proposal.py` — 7 commits
 
 Ownership: single service `idiom-game` (repo-registry.yaml), owner funcoin68, risk tier 3. `.github/workflows/` is human-owned — workflow diffs from an agent are auto-reverted.
 
 ## 8. Recent decisions (rolling, last 90 days, from git log)
-- 2026-11-23 — CYJ-19: repair App SSR smoke test — Landing SSR renders the loading state
-- 2026-11-23 — chore: regenerate onboarding pack (2026-11-23)
-- 2026-11-23 — CYJ-19: session-aware Landing — welcome + Go to Lobby when signed in
-- 2026-11-23 — agent: address review comments (round 1)
-- 2026-11-23 — fix #46: changes-requested (block) verdict enters the stage-7 fix loop
-- 2026-11-23 — CYJ-18: drop unused fetch-stub parameter (lint)
-- 2026-11-23 — CYJ-18: import parseCookies in auth Edge Function
-- 2026-11-23 — CYJ-18 checkpoint 1: failing regression test for parseCookies ReferenceError
-- 2026-11-23 — fix-45: post_proposal parse diagnostics — no more bare tracebacks
-- 2026-11-23 — chore: regenerate onboarding pack (2026-11-23)
-- 2026-11-22 — fix-44: conflict-resolver — git identity on runner + MERGE_HEAD hardening
-- 2026-11-22 — feat: conflict-resolver workflow — agent resolves agent/* PR merge conflicts
-- 2026-11-23 — CYJ-17: flag-gated real create-room path in the Lobby
-- 2026-11-23 — CYJ-17: rooms table, room-authority Edge Function, create-room decision layer
-- 2026-11-23 — CYJ-16: remove flag-cyj-7 gate — Google sign-in live for all users
+- 2026-11-24 — CYJ-31: join-by-code lookup via room-authority, inline errors on unknown code
+- 2026-11-23 — CYJ-30: derive MemoryRouter initial-entry type to fix TS2305
+- 2026-11-23 — agent: address review comments (round 3)
 - 2026-11-23 — agent: address review comments (round 2)
 - 2026-11-23 — agent: address review comments (round 1)
-- 2026-11-23 — CYJ-15: fix /auth/me 401 after Google sign-in via x-cyj-session header transport
+- 2026-11-23 — CYJ-28 checkpoint 4: settings screen UI, lobby notice, WaitingRoom gear, route
+- 2026-11-23 — CYJ-28 checkpoint 3: update-room Edge Function handler + client transport
+- 2026-11-23 — CYJ-28 checkpoint 2: update-room decision layer + settings fields on room detail
+- 2026-11-23 — CYJ-28 checkpoint 1: failing tests for update-room decision layer + settings screen
+- 2026-11-23 — CYJ-27: default create-room name from signed-in user's display_name
+- 2026-11-23 — CYJ-29: type mockFetch spy as typeof fetch to fix 6 TS2493 errors
+- 2026-11-23 — agent: address review comments (round 1)
+- 2026-11-23 — CYJ-26: invalidateSessionCache also drops dangling in-flight promise
+- 2026-11-23 — CYJ-26: integration test — Landing → Lobby → Enter Room costs one /me fetch
+- 2026-11-23 — CYJ-26: sign-out clears client session; reset session cache in screen tests
+- 2026-11-23 — CYJ-26: cache /me session lookup with in-flight dedupe
+- 2026-11-23 — fix broken query
+- 2026-11-23 — agent: address review comments (round 3)
 - 2026-11-23 — agent: address review comments (round 2)
-- 2026-11-23 — agent: address review comments (round 2)
+- 2026-11-23 — agent: address review comments (round 1)
 
 ## 9. Open risks / known debt
 - Persistence exists for AUTH only (users/sessions): game state is still
