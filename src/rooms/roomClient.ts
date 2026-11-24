@@ -344,6 +344,63 @@ export async function closeRoom(roomId: string): Promise<CloseRoomResult> {
   return { kind: 'error', message: `could not close room${detail}` }
 }
 
+export type LeaveRoomResult =
+  | { kind: 'ok' }
+  | { kind: 'unauthorized' }
+  | { kind: 'forbidden' }
+  | { kind: 'not-found' }
+  | { kind: 'error'; message: string }
+
+/**
+ * CYJ-32: remove the signed-in caller from a room they joined. Non-hosts only
+ * — the server 403s the host (hosts end the room via close-room, CYJ-23). Same
+ * transport as closeRoom (cookie + x-cyj-session fallback); a failure keeps
+ * the player in the room, so the screen must surface the error visibly (AC #4)
+ * rather than navigating away as if the leave succeeded.
+ */
+export async function leaveRoom(roomId: string): Promise<LeaveRoomResult> {
+  if (!FUNCTIONS_URL) return { kind: 'error', message: 'game server is not configured' }
+  const token = readSessionToken()
+  let res: Response
+  try {
+    res = await fetch(`${FUNCTIONS_URL}/room-authority/leave-room`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'x-cyj-session': token } : {}),
+      },
+      body: JSON.stringify({ roomId }),
+    })
+  } catch (err) {
+    return { kind: 'error', message: `network error: ${String(err)}` }
+  }
+  if (res.status === 401) {
+    await res.body?.cancel()
+    return { kind: 'unauthorized' }
+  }
+  if (res.status === 403) {
+    await res.body?.cancel()
+    return { kind: 'forbidden' }
+  }
+  if (res.status === 404) {
+    await res.body?.cancel()
+    return { kind: 'not-found' }
+  }
+  if (res.ok) {
+    await res.body?.cancel()
+    return { kind: 'ok' }
+  }
+  let body: { error?: unknown } = {}
+  try {
+    body = await res.json()
+  } catch {
+    /* non-JSON error body — fall through to the status-based message */
+  }
+  const detail = typeof body.error === 'string' ? `: ${body.error}` : ` (HTTP ${res.status})`
+  return { kind: 'error', message: `could not leave room${detail}` }
+}
+
 export type UpdateRoomResult =
   | { kind: 'ok' }
   | { kind: 'unauthorized' }
