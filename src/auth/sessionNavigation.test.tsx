@@ -74,6 +74,11 @@ function stubFetch(me: { user: Record<string, unknown> | null; status: number })
     if (url.endsWith('/room-authority/active-room')) {
       return Promise.resolve(new Response(JSON.stringify({ room: null }), { status: 200 }))
     }
+    // CYJ-34: the Lobby's joined-rooms read answers with the normal empty
+    // state so these assertions stay about the session cache.
+    if (url.endsWith('/room-authority/joined-rooms')) {
+      return Promise.resolve(new Response(JSON.stringify({ rooms: [] }), { status: 200 }))
+    }
     if (url.includes('/room-authority/room/')) {
       return Promise.resolve(new Response(JSON.stringify(ROOM_PAYLOAD), { status: 200 }))
     }

@@ -236,6 +236,10 @@ describe('Lobby create room (CYJ-17)', () => {
       if (urlString.endsWith('/room-authority/active-room')) {
         return Promise.resolve(new Response('{"room":null}', { status: 200 }))
       }
+      // CYJ-34: same for the joined-rooms read.
+      if (urlString.endsWith('/room-authority/joined-rooms')) {
+        return Promise.resolve(new Response('{"rooms":[]}', { status: 200 }))
+      }
       return Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -320,6 +324,9 @@ describe('Lobby create-room name default (CYJ-27)', () => {
       }
       if (urlString.endsWith('/room-authority/active-room')) {
         return Promise.resolve(new Response('{"room":null}', { status: 200 }))
+      }
+      if (urlString.endsWith('/room-authority/joined-rooms')) {
+        return Promise.resolve(new Response('{"rooms":[]}', { status: 200 }))
       }
       return Promise.resolve(
         new Response(user ? JSON.stringify({ user }) : '{"error":"no session"}', {
@@ -408,6 +415,11 @@ describe('Lobby active room (CYJ-23)', () => {
       if (urlString.endsWith('/room-authority/active-room')) {
         return (handlers.activeRoom ?? (() =>
           Promise.resolve(new Response(JSON.stringify({ room: ACTIVE_ROOM }), { status: 200 }))))()
+      }
+      // CYJ-34: the joined-rooms read answers with the normal empty state so
+      // these assertions stay about the active-room section.
+      if (urlString.endsWith('/room-authority/joined-rooms')) {
+        return Promise.resolve(new Response('{"rooms":[]}', { status: 200 }))
       }
       return (handlers.me ?? (() =>
         Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))))()
@@ -557,6 +569,9 @@ describe('Lobby join by code (CYJ-31)', () => {
       if (urlString.endsWith('/room-authority/active-room')) {
         return Promise.resolve(new Response('{"room":null}', { status: 200 }))
       }
+      if (urlString.endsWith('/room-authority/joined-rooms')) {
+        return Promise.resolve(new Response('{"rooms":[]}', { status: 200 }))
+      }
       return Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -700,5 +715,135 @@ describe('Lobby join by code (CYJ-31)', () => {
     expect(alert?.textContent).toContain('room lookup failed')
     expect(container.querySelector('[data-testid="room-page"]')).toBeNull()
     expect(container.querySelector('[data-testid="url-probe"]')?.textContent).toBe('/lobby')
+  })
+})
+
+describe('Lobby joined rooms (CYJ-34)', () => {
+  const JOINED = [
+    { roomId: 'r-joined-1', code: 'AB23CD', name: 'Chain gang', hostName: 'Host Han' },
+    { roomId: 'r-joined-2', code: 'K7M2QP', name: null, hostName: 'Greta Guest' },
+  ]
+
+  // Dispatches by URL like the CYJ-23 block: /auth/me answers the session
+  // fetch, active-room and joined-rooms answer per-test. joinedCalls records
+  // the joined-rooms requests so the signed-out test can assert the endpoint
+  // is never hit without a session.
+  function stubFetch(
+    handlers: {
+      me?: () => Promise<Response>
+      activeRoom?: () => Promise<Response>
+      joinedRooms?: () => Promise<Response>
+    } = {},
+  ) {
+    const joinedCalls: string[] = []
+    const fetchMock = vi.fn((url: string | URL) => {
+      const urlString = String(url)
+      if (urlString.endsWith('/room-authority/joined-rooms')) {
+        joinedCalls.push(urlString)
+        return (handlers.joinedRooms ?? (() =>
+          Promise.resolve(new Response(JSON.stringify({ rooms: JOINED }), { status: 200 }))))()
+      }
+      if (urlString.endsWith('/room-authority/active-room')) {
+        return (handlers.activeRoom ?? (() =>
+          Promise.resolve(new Response('{"room":null}', { status: 200 }))))()
+      }
+      return (handlers.me ?? (() =>
+        Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))))()
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return { joinedCalls }
+  }
+
+  function joinedSection(container: HTMLElement): HTMLElement {
+    const section = container.querySelector('[aria-labelledby="lobby-joined-heading"]')
+    if (!section) throw new Error('joined-rooms section not found')
+    return section as HTMLElement
+  }
+
+  // AC #3: the section lists every room the endpoint returns, each entry
+  // showing the room name and the host name — in a section visibly separate
+  // from the hosted-rooms ("Your active room") section.
+  it('lists every joined room with its name and host name in its own section', async () => {
+    stubFetch()
+    const container = await renderLobbyWithRoutes('/lobby')
+    const section = joinedSection(container)
+    expect(section.textContent).toContain('Chain gang')
+    expect(section.textContent).toContain('Host Han')
+    expect(section.textContent).toContain('Greta Guest')
+    // visibly separate: a distinct section from the hosted-rooms one
+    const active = container.querySelector('[aria-labelledby="lobby-active-heading"]')
+    expect(active).not.toBeNull()
+    expect(section).not.toBe(active)
+  })
+
+  // AC #4: each entry navigates to /room/:roomId for that room.
+  it('navigates to /room/:roomId when a joined entry is opened', async () => {
+    stubFetch()
+    const container = await renderLobbyWithRoutes('/lobby')
+    const enterButtons = Array.from(joinedSection(container).querySelectorAll('button')).filter(
+      (b) => b.textContent === 'Enter',
+    )
+    expect(enterButtons).toHaveLength(2)
+    await act(async () => {
+      enterButtons[0].click()
+    })
+    expect(container.querySelector('[data-testid="room-page"]')?.textContent).toBe(
+      'ROOM PAGE r-joined-1',
+    )
+  })
+
+  // AC #6: no non-hosted rooms → an explicit empty state, never a spinner or
+  // a blank area (and never an error).
+  it('renders the empty state when the user belongs to no non-hosted rooms', async () => {
+    stubFetch({
+      joinedRooms: () => Promise.resolve(new Response('{"rooms":[]}', { status: 200 })),
+    })
+    const container = await renderLobbyWithRoutes('/lobby')
+    const section = joinedSection(container)
+    expect(section.textContent).toContain("You haven't joined any rooms yet")
+    expect(section.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  // Rule 12: a failed read is a visible alert, never a false empty state.
+  it('endpoint failure: surfaces an alert instead of a false empty state', async () => {
+    stubFetch({
+      joinedRooms: () =>
+        Promise.resolve(new Response('{"error":"joined rooms lookup failed"}', { status: 500 })),
+    })
+    const container = await renderLobbyWithRoutes('/lobby')
+    const section = joinedSection(container)
+    expect(section.textContent).not.toContain("haven't joined")
+    expect(section.querySelector('[role="alert"]')?.textContent).toBeTruthy()
+  })
+
+  // AC #5: a user who hosts one room AND joined another sees only the joined
+  // room in the new section. The endpoint performs the exclusion (covered in
+  // joinedRooms.test.ts) — the stub returns what the endpoint returns.
+  it('a room the user hosts never appears in the joined section (host + joined elsewhere)', async () => {
+    const HOSTED = { roomId: 'r-hosted', code: 'ZZ99ZZ', name: 'My own room', status: 'waiting' }
+    stubFetch({
+      activeRoom: () =>
+        Promise.resolve(new Response(JSON.stringify({ room: HOSTED }), { status: 200 })),
+      joinedRooms: () =>
+        Promise.resolve(new Response(JSON.stringify({ rooms: [JOINED[0]] }), { status: 200 })),
+    })
+    const container = await renderLobbyWithRoutes('/lobby')
+    const active = container.querySelector('[aria-labelledby="lobby-active-heading"]')
+    expect(active?.textContent).toContain('ZZ99ZZ')
+    const section = joinedSection(container)
+    expect(section.textContent).toContain('Chain gang')
+    expect(section.textContent).not.toContain('ZZ99ZZ')
+    expect(section.textContent).not.toContain('My own room')
+  })
+
+  // The endpoint is session-gated: anonymous visitors never fire the fetch
+  // and never see the section.
+  it('signed out: the section is absent and the endpoint is never called', async () => {
+    const { joinedCalls } = stubFetch({
+      me: () => Promise.resolve(new Response('{"error":"no session"}', { status: 401 })),
+    })
+    const container = await renderLobbyWithRoutes('/lobby')
+    expect(container.querySelector('[aria-labelledby="lobby-joined-heading"]')).toBeNull()
+    expect(joinedCalls).toHaveLength(0)
   })
 })
