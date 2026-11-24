@@ -63,6 +63,29 @@ const HOST_ME = () =>
 const LEAVE_OK = () =>
   Promise.resolve(new Response(JSON.stringify({ roomId: 'r-real-1', left: true }), { status: 200 }))
 
+// CYJ-33: the AC's exactly-3 example — a full room (3 players including the
+// host) that a fourth signed-in user joins as an observer.
+const FULL_PAYLOAD = {
+  room: { ...PAYLOAD.room, maxPlayers: 3 },
+  players: [
+    { userId: 'u-host', name: 'Host Han', avatarUrl: null, isHost: true },
+    { userId: 'u-guest', name: 'Greta Guest', avatarUrl: 'https://x.test/g.png', isHost: false },
+    { userId: 'u-third', name: 'Tam Third', avatarUrl: null, isHost: false },
+  ],
+}
+
+const FULL_ROOM = () => Promise.resolve(new Response(JSON.stringify(FULL_PAYLOAD), { status: 200 }))
+
+const OBSERVER_ME = () =>
+  Promise.resolve(
+    new Response(
+      JSON.stringify({
+        user: { id: 'u-observer', email: 'o@x.test', display_name: 'Obsie Observer', avatar_url: null },
+      }),
+      { status: 200 },
+    ),
+  )
+
 // Renders outside any <Route> match so navigation targets stay observable:
 // the /lobby marker proves a successful leave navigated, the * marker's
 // pathname proves a failed leave stayed on /room/:roomId.
@@ -283,5 +306,53 @@ describe('WaitingRoom — Leave Room (CYJ-32)', () => {
     expect(alert?.textContent).toBeTruthy()
     expect(container.textContent).toContain(PAYLOAD.room.code)
     expect(container.textContent).not.toContain('LOBBY_MARKER')
+  })
+})
+
+describe('WaitingRoom — full-room observer (CYJ-33)', () => {
+  const findLeaveButton = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Leave Room')
+
+  // AC #6: a signed-in user who joined a full room has no room_players row —
+  // the WaitingRoom derives observer state from the same players list +
+  // maxPlayers the server used, so the notice survives a page refresh.
+  it('signed-in non-member of a full room: observer notice renders, no Leave Room action', async () => {
+    const { container } = await renderWaitingRoom('/room/r-real-1', {
+      room: FULL_ROOM,
+      me: OBSERVER_ME,
+    })
+    expect(container.textContent).toContain("This room is full — you're an observer.")
+    // The observer has no row to remove — Leave would 403, so it is hidden.
+    expect(findLeaveButton(container)).toBeUndefined()
+    // All three real players (host + previously joined) render unchanged.
+    expect(container.textContent).toContain('Players 3/3')
+    expect(container.textContent).toContain('Host Han')
+    expect(container.textContent).toContain('Greta Guest')
+    expect(container.textContent).toContain('Tam Third')
+  })
+
+  // AC #2: a listed player refreshing the room sees themselves — no observer
+  // notice, the (you) marker shows, and the CYJ-32 Leave Room action stays.
+  it('listed non-host in a full room: no observer notice, (you) marker, Leave Room present', async () => {
+    const { container } = await renderWaitingRoom('/room/r-real-1', {
+      room: FULL_ROOM,
+      me: GUEST_ME,
+    })
+    expect(container.textContent).not.toContain('observer')
+    expect(container.textContent).toContain('Greta Guest (you)')
+    expect(findLeaveButton(container)).toBeTruthy()
+  })
+
+  // A signed-out viewer has no identity to be an observer OF — no notice.
+  it('signed-out viewer of a full room: no observer notice', async () => {
+    const { container } = await renderWaitingRoom('/room/r-real-1', { room: FULL_ROOM })
+    expect(container.textContent).not.toContain('observer')
+  })
+
+  // A signed-in non-member of a room with free slots is not an observer —
+  // the notice requires the list to be full.
+  it('signed-in non-member of a non-full room: no observer notice', async () => {
+    const { container } = await renderWaitingRoom('/room/r-real-1', { me: OBSERVER_ME })
+    expect(container.textContent).not.toContain('observer')
   })
 })
