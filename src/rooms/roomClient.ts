@@ -246,6 +246,53 @@ export async function fetchRoom(roomId: string): Promise<FetchRoomResult> {
   }
 }
 
+export type FetchRoomIdByCodeResult =
+  | { kind: 'ok'; roomId: string }
+  | { kind: 'not-found' }
+  | { kind: 'error'; message: string }
+
+/**
+ * CYJ-31: resolve a 6-char room code to its room id for the join-by-code
+ * flow. Public read — same as fetchRoom; returns the id only, the WaitingRoom
+ * loads full detail itself (CYJ-24). Same transport pattern as fetchRoom; a
+ * 404 is a DISTINCT result so the join form can show "No room found for that
+ * code." inline with the typed code preserved (AC #2), never fixture data.
+ */
+export async function fetchRoomIdByCode(code: string): Promise<FetchRoomIdByCodeResult> {
+  if (!FUNCTIONS_URL) return { kind: 'error', message: 'game server is not configured' }
+  const token = readSessionToken()
+  let res: Response
+  try {
+    res = await fetch(
+      `${FUNCTIONS_URL}/room-authority/room-by-code/${encodeURIComponent(code)}`,
+      {
+        credentials: 'include',
+        headers: token ? { 'x-cyj-session': token } : {},
+      },
+    )
+  } catch (err) {
+    return { kind: 'error', message: `network error: ${String(err)}` }
+  }
+  if (res.status === 404) {
+    await res.body?.cancel()
+    return { kind: 'not-found' }
+  }
+  let body: { roomId?: unknown; error?: unknown } = {}
+  try {
+    body = await res.json()
+  } catch {
+    /* non-JSON error body — fall through to the status-based message */
+  }
+  if (!res.ok) {
+    const detail = typeof body.error === 'string' ? `: ${body.error}` : ` (HTTP ${res.status})`
+    return { kind: 'error', message: `could not look up room${detail}` }
+  }
+  if (typeof body.roomId !== 'string' || body.roomId === '') {
+    return { kind: 'error', message: 'game server returned an invalid response' }
+  }
+  return { kind: 'ok', roomId: body.roomId }
+}
+
 export type CloseRoomResult =
   | { kind: 'ok' }
   | { kind: 'unauthorized' }

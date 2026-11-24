@@ -70,6 +70,8 @@ async function renderLobbyWithRoutes(route: string): Promise<HTMLElement> {
           <Route path="/lobby" element={<Lobby />} />
           <Route path="/room/:roomId" element={<RoomPage />} />
         </Routes>
+        {/* CYJ-31: the join-by-code tests assert NO navigation via the probe. */}
+        <UrlProbe />
       </MemoryRouter>,
     )
   })
@@ -526,5 +528,102 @@ describe('Lobby active room (CYJ-23)', () => {
     expect(active).not.toBeNull()
     expect(rooms!.compareDocumentPosition(active!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(active!.compareDocumentPosition(rooms!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
+})
+
+describe('Lobby join by code (CYJ-31)', () => {
+  // Dispatches by URL like the CYJ-17 block: /auth/me and active-room answer
+  // the mount-time fetches; room-by-code answers with the per-test handler.
+  function stubFetch(lookupHandler: (url: string) => Promise<Response>) {
+    const lookupCalls: string[] = []
+    const fetchMock = vi.fn((url: string | URL) => {
+      const urlString = String(url)
+      if (urlString.includes('/room-authority/room-by-code/')) {
+        lookupCalls.push(urlString)
+        return lookupHandler(urlString)
+      }
+      if (urlString.endsWith('/room-authority/active-room')) {
+        return Promise.resolve(new Response('{"room":null}', { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({ user: USER }), { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return { lookupCalls }
+  }
+
+  // CodeInput auto-submits on the 6th character; a paste fills all six boxes
+  // in one shot. jsdom has no ClipboardEvent payload, so the paste event
+  // carries a stub clipboardData (the component only reads getData('text')).
+  async function pasteCode(container: HTMLElement, code: string): Promise<HTMLElement> {
+    await act(async () => {
+      findButton(container, 'Join Code').click()
+    })
+    const dialog = container.querySelector('[role="dialog"]')
+    if (!dialog) throw new Error('join dialog not found')
+    const firstBox = dialog.querySelector('input.code-input-box')
+    if (!firstBox) throw new Error('code input not found')
+    const pasteEvent = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(pasteEvent, 'clipboardData', {
+      value: { getData: () => code },
+    })
+    await act(async () => {
+      firstBox.dispatchEvent(pasteEvent)
+      // flush submitJoin's lookup fetch and its state update
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+    })
+    return dialog as HTMLElement
+  }
+
+  // AC #1: a valid code triggers the room-authority lookup keyed by that code
+  // and navigates to /room/:roomId.
+  it('valid code: looks up the room by code and navigates to /room/:roomId', async () => {
+    const { lookupCalls } = stubFetch(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ roomId: 'r-joined', code: 'AB23CD' }), { status: 200 }),
+      ),
+    )
+    const container = await renderLobbyWithRoutes('/lobby')
+    await pasteCode(container, 'AB23CD')
+
+    expect(lookupCalls).toHaveLength(1)
+    expect(lookupCalls[0]).toContain('/room-authority/room-by-code/AB23CD')
+    expect(container.querySelector('[data-testid="room-page"]')?.textContent).toBe(
+      'ROOM PAGE r-joined',
+    )
+  })
+
+  // AC #2: an unknown code shows the inline error, the user stays on the form
+  // with the typed code preserved, and no navigation occurs.
+  it('unknown code: inline error, input preserved, no navigation', async () => {
+    const { lookupCalls } = stubFetch(() =>
+      Promise.resolve(new Response('{"error":"no room found for that code"}', { status: 404 })),
+    )
+    const container = await renderLobbyWithRoutes('/lobby')
+    const dialog = await pasteCode(container, 'ZZZZZZ')
+
+    expect(lookupCalls).toHaveLength(1)
+    const alert = dialog.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('No room found for that code.')
+    // no navigation: no room page, the URL probe still reports /lobby
+    expect(container.querySelector('[data-testid="room-page"]')).toBeNull()
+    expect(container.querySelector('[data-testid="url-probe"]')?.textContent).toBe('/lobby')
+    // the modal stayed open, so CodeInput kept its state — the six boxes
+    // still hold the typed characters
+    const boxes = Array.from(dialog.querySelectorAll<HTMLInputElement>('input.code-input-box'))
+    expect(boxes).toHaveLength(6)
+    expect(boxes.map((b) => b.value).join('')).toBe('ZZZZZZ')
+  })
+
+  // A server/transport failure surfaces its message inline, same discipline
+  // as the create modal — no navigation, no silent swallow (rule 12).
+  it('lookup failure: shows the server message inline and does not navigate', async () => {
+    stubFetch(() => Promise.resolve(new Response('{"error":"room lookup failed"}', { status: 500 })))
+    const container = await renderLobbyWithRoutes('/lobby')
+    const dialog = await pasteCode(container, 'AB23CD')
+
+    const alert = dialog.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('room lookup failed')
+    expect(container.querySelector('[data-testid="room-page"]')).toBeNull()
+    expect(container.querySelector('[data-testid="url-probe"]')?.textContent).toBe('/lobby')
   })
 })

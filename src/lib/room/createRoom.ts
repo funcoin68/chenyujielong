@@ -89,7 +89,7 @@ function isPositiveInt(value: unknown): value is number {
 }
 
 export type CreateRoomDecision = {
-  status: 200 | 401 | 500
+  status: 200 | 401 | 409 | 500
   body:
     | { roomId: string; code: string; alreadyExisted: boolean }
     | { error: string }
@@ -100,14 +100,18 @@ export type CreateRoomDecision = {
  * current active room (status <> 'closed'), if any; `created` is the freshly
  * inserted row on the insert-success path only.
  *
- * The 500 branch is only reachable when an insert failed with the partial
- * unique index's 409 and the guaranteed-to-exist re-select found nothing —
- * an invariant violation, surfaced loudly (rule 12), never silently retried.
+ * The 500 branch is only reachable when an insert failed WITHOUT a 409 —
+ * e.g. a PostgREST error — and no existing or created room was found. A 409
+ * whose post-insert re-select found no active room is a room-CODE collision
+ * (CYJ-31): the bounded retry loop in the Edge Function regenerates the code,
+ * and only a persistent collision reaches here as `codeConflict: true` — an
+ * explicit 409 (AC #3), never a 500 or a silent success.
  */
 export function createRoomDecision(args: {
   userId: string | null
   room: { id: string; code: string } | null
   created?: { id: string; code: string }
+  codeConflict?: boolean
 }): CreateRoomDecision {
   if (args.userId === null) {
     return { status: 401, body: { error: 'no session' } }
@@ -123,6 +127,9 @@ export function createRoomDecision(args: {
       status: 200,
       body: { roomId: args.created.id, code: args.created.code, alreadyExisted: false },
     }
+  }
+  if (args.codeConflict) {
+    return { status: 409, body: { error: 'room code in use, please try again' } }
   }
   return { status: 500, body: { error: 'room creation failed' } }
 }

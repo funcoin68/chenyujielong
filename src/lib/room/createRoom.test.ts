@@ -101,4 +101,13 @@ describe('createRoomDecision', () => {
     expect(decision.status).toBe(500)
     expect(decision.body).toEqual({ error: 'room creation failed' })
   })
+
+  // CYJ-31 AC #3: the bounded code-collision retry exhausted — a duplicate
+  // code is rejected as a 4xx from the decision layer, never a 500 or a
+  // silent success.
+  it('maps a persistent code collision (retry exhausted) to 409', () => {
+    const decision = createRoomDecision({ userId: 'u-1', room: null, codeConflict: true })
+    expect(decision.status).toBe(409)
+    expect(decision.body).toEqual({ error: 'room code in use, please try again' })
+  })
 })

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createRoom, fetchActiveRoom, closeRoom } from './roomClient'
+import { createRoom, fetchActiveRoom, closeRoom, fetchRoomIdByCode } from './roomClient'
 import { saveSessionToken } from '../auth/sessionToken'
 import { memoryStorage } from '../auth/memoryStorage'
 
@@ -144,6 +144,60 @@ describe('fetchActiveRoom (CYJ-23)', () => {
     await fetchActiveRoom()
     const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toMatch(/\/room-authority\/active-room$/)
+    expect(init.method).toBeUndefined()
+    expect(init.credentials).toBe('include')
+    expect(new Headers(init.headers).get('x-cyj-session')).toBe('tok-abc')
+  })
+})
+
+describe('fetchRoomIdByCode (CYJ-31)', () => {
+  it('returns an error result without a network call when FUNCTIONS_URL is not configured', async () => {
+    configState.functionsUrl = ''
+    const spy = mockFetch(() =>
+      Promise.resolve(new Response(JSON.stringify({ roomId: 'r-1' }), { status: 200 })),
+    )
+    const res = await fetchRoomIdByCode('AB23CD')
+    expect(res).toEqual({ kind: 'error', message: 'game server is not configured' })
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('resolves the room id on a 200 response', async () => {
+    mockFetch(() =>
+      Promise.resolve(new Response(JSON.stringify({ roomId: 'r-1', code: 'AB23CD' }), { status: 200 })),
+    )
+    expect(await fetchRoomIdByCode('AB23CD')).toEqual({ kind: 'ok', roomId: 'r-1' })
+  })
+
+  it('maps a 404 to the distinct not-found result (unknown code → inline error)', async () => {
+    mockFetch(() =>
+      Promise.resolve(new Response('{"error":"no room found for that code"}', { status: 404 })),
+    )
+    expect(await fetchRoomIdByCode('ZZZZZZ')).toEqual({ kind: 'not-found' })
+  })
+
+  it('maps a non-ok response to an error result carrying the server message', async () => {
+    mockFetch(() =>
+      Promise.resolve(new Response('{"error":"room lookup failed"}', { status: 500 })),
+    )
+    const res = await fetchRoomIdByCode('AB23CD')
+    expect(res.kind).toBe('error')
+    if (res.kind === 'error') expect(res.message).toContain('room lookup failed')
+  })
+
+  it('rejects an invalid payload instead of trusting it (rule 9)', async () => {
+    mockFetch(() => Promise.resolve(new Response(JSON.stringify({ roomId: 42 }), { status: 200 })))
+    const res = await fetchRoomIdByCode('AB23CD')
+    expect(res).toEqual({ kind: 'error', message: 'game server returned an invalid response' })
+  })
+
+  it('GETs the room-by-code endpoint with credentials and the stored token', async () => {
+    saveSessionToken('tok-abc')
+    const spy = mockFetch(() =>
+      Promise.resolve(new Response(JSON.stringify({ roomId: 'r-1', code: 'AB23CD' }), { status: 200 })),
+    )
+    await fetchRoomIdByCode('AB23CD')
+    const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toMatch(/\/room-authority\/room-by-code\/AB23CD$/)
     expect(init.method).toBeUndefined()
     expect(init.credentials).toBe('include')
     expect(new Headers(init.headers).get('x-cyj-session')).toBe('tok-abc')
