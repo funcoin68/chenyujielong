@@ -200,6 +200,15 @@
   font-size: 14px;
 }
 
+/* CYJ-34: "Rooms you've joined" section — rows reuse .lobby-room-list /
+   .lobby-room / .chip (rule 11); only the empty/error line needs its own
+   rule (mirrors .lobby-active-empty). */
+.lobby-joined-empty {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 14px;
+}
+
 .lobby-close-confirm {
   margin: 0 0 var(--space-2);
 }

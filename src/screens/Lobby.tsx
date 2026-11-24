@@ -7,7 +7,7 @@ import { RoomSettings, defaultRoomName, type RoomSettingsValues } from './RoomSe
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import { saveSessionToken } from '../auth/sessionToken'
-import { closeRoom, createRoom, fetchActiveRoom, fetchRoomIdByCode, joinRoom, type ActiveRoom } from '../rooms/roomClient'
+import { closeRoom, createRoom, fetchActiveRoom, fetchJoinedRooms, fetchRoomIdByCode, joinRoom, type ActiveRoom, type JoinedRoom } from '../rooms/roomClient'
 import './Lobby.css'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -55,7 +55,10 @@ export default function Lobby() {
       // the endpoint 401s without a session — so the read is chained off a
       // successful session resolution, never fired for anonymous visitors.
       if (!user) return
-      const result = await fetchActiveRoom()
+      // CYJ-34: the joined-rooms read fires in parallel with the active-room
+      // read — both chain off the session resolution, so anonymous visitors
+      // never trigger either endpoint.
+      const [result, joined] = await Promise.all([fetchActiveRoom(), fetchJoinedRooms()])
       if (cancelled) return
       if (result.kind === 'ok') {
         setActiveRoom(result.room)
@@ -65,6 +68,15 @@ export default function Lobby() {
         setActiveRoomError('Please sign in to view your active room.')
       } else {
         setActiveRoomError(result.message)
+      }
+      if (joined.kind === 'ok') {
+        setJoinedRooms(joined.rooms)
+      } else if (joined.kind === 'unauthorized') {
+        // Same expired-session surface as the active-room read (rule 12) —
+        // never render a false "haven't joined" empty state.
+        setJoinedRoomsError('Please sign in to view rooms you joined.')
+      } else {
+        setJoinedRoomsError(joined.message)
       }
     })
     return () => {
@@ -92,6 +104,11 @@ export default function Lobby() {
   // surfaced as activeRoomError, never as an empty state.
   const [activeRoom, setActiveRoom] = useState<ActiveRoom | null | undefined>(undefined)
   const [activeRoomError, setActiveRoomError] = useState<string | null>(null)
+  // CYJ-34: the "Rooms you've joined" section — same tri-state discipline as
+  // the active-room section (undefined = still resolving, an error is a
+  // visible alert, [] is the explicit empty state).
+  const [joinedRooms, setJoinedRooms] = useState<JoinedRoom[] | undefined>(undefined)
+  const [joinedRoomsError, setJoinedRoomsError] = useState<string | null>(null)
   const [closeOpen, setCloseOpen] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
   const [closing, setClosing] = useState(false)
@@ -333,6 +350,47 @@ export default function Lobby() {
             )}
             {/* closeError renders only inside the confirm modal — rendering it
                 here too would double the role="alert" while the modal is open. */}
+          </section>
+        )}
+
+        {/* CYJ-34: rooms the signed-in user joined but does not host — a
+            section visibly separate from "Your active room" (own heading,
+            own list). Hidden entirely when signed out (the endpoint requires
+            a session); an explicit empty state when the user belongs to no
+            non-hosted rooms. */}
+        {authUser && (
+          <section className="lobby-joined" aria-labelledby="lobby-joined-heading">
+            <h2 id="lobby-joined-heading" className="lobby-section-title">
+              Rooms you&apos;ve joined
+            </h2>
+            {joinedRoomsError ? (
+              <p className="lobby-joined-empty" role="alert">
+                {joinedRoomsError}
+              </p>
+            ) : joinedRooms === undefined ? null : joinedRooms.length === 0 ? (
+              <p className="lobby-joined-empty">You haven&apos;t joined any rooms yet</p>
+            ) : (
+              <ul className="lobby-room-list">
+                {joinedRooms.map((room) => (
+                  <li key={room.roomId} className="card lobby-room">
+                    <div className="lobby-room-info">
+                      <span className="lobby-room-name">{room.name ?? 'Untitled room'}</span>
+                      <span className="lobby-room-meta">
+                        <span className="chip">{room.code}</span>
+                        <span className="chip">Host: {room.hostName}</span>
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => navigate(`/room/${room.roomId}`)}
+                    >
+                      Enter
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         )}
 

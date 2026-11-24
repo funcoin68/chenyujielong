@@ -8,6 +8,8 @@ import { isWellFormedRoomCode } from '../../../src/lib/room/code.ts'
 import { createRoomDecision, parseCreateRoomBody } from '../../../src/lib/room/createRoom.ts'
 import type { RoomSettingsInput } from '../../../src/lib/room/createRoom.ts'
 import { activeRoomDecision } from '../../../src/lib/room/activeRoom.ts'
+import { joinedRoomsDecision } from '../../../src/lib/room/joinedRooms.ts'
+import type { JoinedMembershipRow } from '../../../src/lib/room/joinedRooms.ts'
 import { closeRoomDecision, parseCloseRoomBody } from '../../../src/lib/room/closeRoom.ts'
 import { leaveRoomDecision, parseLeaveRoomBody } from '../../../src/lib/room/leaveRoom.ts'
 import { getRoomDecision } from '../../../src/lib/room/getRoom.ts'
@@ -84,6 +86,43 @@ async function selectRoomById(roomId: string): Promise<SelectResult> {
     return { ok: false }
   }
   return { ok: true, row: ((await res.json()) as RoomRow[])?.[0] ?? null }
+}
+
+// CYJ-34: one PostgREST round trip for the Lobby's joined-rooms section — the
+// caller's room_players rows (WITHOUT an is_host filter: the host exclusion
+// is the decision layer's job, so it stays Vitest-covered) with each room and
+// its players embedded; the host's display_name comes from the nested
+// room_players → users embed (display_name ONLY — never email, PII
+// discipline). rooms!inner + rooms.status=neq.closed drops closed rooms in
+// the same query: a closed room's code is dead and join-room 404s on it, so
+// listing it would be a dead link (same filter as selectActiveRoom). userId
+// is server-derived (session row), so it needs no encoding (CYJ-23
+// discipline applies to client-supplied values only).
+interface JoinedMembershipQueryRow {
+  is_host: boolean
+  // room_players → rooms is many-to-one, so PostgREST embeds a single object
+  // (the nested room_players → users embed below is one-to-many: an array).
+  rooms: {
+    id: string
+    code: string
+    name: string | null
+    room_players: { is_host: boolean; users: { display_name: string | null } | null }[]
+  }
+}
+
+async function selectJoinedRooms(
+  userId: string,
+): Promise<{ ok: true; rows: JoinedMembershipQueryRow[] } | { ok: false }> {
+  const res = await rest(
+    `/room_players?user_id=eq.${userId}` +
+      '&select=is_host,rooms!inner(id,code,name,room_players(is_host,users(display_name)))' +
+      '&rooms.status=neq.closed',
+  )
+  if (!res.ok) {
+    console.error(`room-authority: joined-rooms lookup failed: HTTP ${res.status}`)
+    return { ok: false }
+  }
+  return { ok: true, rows: (await res.json()) as JoinedMembershipQueryRow[] }
 }
 
 // CYJ-32: the caller's room_players row, looked up before any write — the
@@ -394,6 +433,44 @@ async function handleActiveRoom(req: Request): Promise<Response> {
     200,
     headers,
   )
+}
+
+// CYJ-34: read-only list of the rooms the caller JOINED but does not host —
+// the Lobby's "Rooms you've joined" section. Mirrors handleActiveRoom step
+// for step: session resolution → lookup (a failure is a loud 500, never a
+// fake empty list) → decision layer (the host exclusion and the 200 shape
+// live there, Vitest-covered). Read-only: it must never insert, so the Lobby
+// can render the section on every mount.
+async function handleJoinedRooms(req: Request): Promise<Response> {
+  const headers = withCors(new Headers())
+
+  const session = await resolveUserId(
+    req.headers.get('cookie'),
+    req.headers.get('x-cyj-session'),
+    lookupSession,
+  )
+  if (session.kind !== 'ok') {
+    return json({ error: 'no session' }, 401, headers)
+  }
+
+  const selected = await selectJoinedRooms(session.row.user_id)
+  if (!selected.ok) {
+    return json({ error: 'joined rooms lookup failed' }, 500, headers)
+  }
+  const memberships: JoinedMembershipRow[] = selected.rows.map((row) => ({
+    isHost: row.is_host,
+    room: {
+      id: row.rooms.id,
+      code: row.rooms.code,
+      name: row.rooms.name,
+      players: row.rooms.room_players.map((p) => ({
+        isHost: p.is_host,
+        displayName: p.users?.display_name ?? null,
+      })),
+    },
+  }))
+  const decision = joinedRoomsDecision({ userId: session.row.user_id, memberships })
+  return json(decision.body, decision.status, headers)
 }
 
 // CYJ-24: read-only room detail for the WaitingRoom — the room row plus
@@ -806,6 +883,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json({ error: 'method not allowed' }, 405, withCors(new Headers()))
     }
     return handleActiveRoom(req)
+  }
+  // CYJ-34: GET /room-authority/joined-rooms — same pattern as /active-room:
+  // routed before the POST gate, GET enforced here.
+  if (path.endsWith('/joined-rooms')) {
+    if (req.method !== 'GET') {
+      return json({ error: 'method not allowed' }, 405, withCors(new Headers()))
+    }
+    return handleJoinedRooms(req)
   }
   // CYJ-31: GET /room-authority/room-by-code/<code> — join-by-code lookup.
   // A distinct segment from /room/<id> below: that route is UUID-keyed and its
