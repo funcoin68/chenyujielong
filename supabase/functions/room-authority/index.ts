@@ -9,6 +9,7 @@ import { createRoomDecision, parseCreateRoomBody } from '../../../src/lib/room/c
 import type { RoomSettingsInput } from '../../../src/lib/room/createRoom.ts'
 import { activeRoomDecision } from '../../../src/lib/room/activeRoom.ts'
 import { closeRoomDecision, parseCloseRoomBody } from '../../../src/lib/room/closeRoom.ts'
+import { leaveRoomDecision, parseLeaveRoomBody } from '../../../src/lib/room/leaveRoom.ts'
 import { getRoomDecision } from '../../../src/lib/room/getRoom.ts'
 import type { RoomPlayerRow } from '../../../src/lib/room/getRoom.ts'
 import { lookupRoomByCodeDecision } from '../../../src/lib/room/lookupRoomByCode.ts'
@@ -82,6 +83,24 @@ async function selectRoomById(roomId: string): Promise<SelectResult> {
     return { ok: false }
   }
   return { ok: true, row: ((await res.json()) as RoomRow[])?.[0] ?? null }
+}
+
+// CYJ-32: the caller's room_players row, looked up before any write — the
+// decision layer refuses non-members and the host, so the DELETE can only
+// ever remove the caller's own non-host row. roomId is client-supplied, so it
+// is encoded before interpolation (CYJ-23 discipline); userId is
+// server-derived (session row) and needs none.
+type MembershipResult = { ok: true; row: { user_id: string; is_host: boolean } | null } | { ok: false }
+
+async function selectMembership(roomId: string, userId: string): Promise<MembershipResult> {
+  const res = await rest(
+    `/room_players?room_id=eq.${encodeURIComponent(roomId)}&user_id=eq.${userId}&select=user_id,is_host&limit=1`,
+  )
+  if (!res.ok) {
+    console.error(`room-authority: membership lookup failed: HTTP ${res.status}`)
+    return { ok: false }
+  }
+  return { ok: true, row: ((await res.json()) as { user_id: string; is_host: boolean }[])?.[0] ?? null }
 }
 
 // CYJ-31: the join-by-code lookup returns ONLY id+code — the smallest payload
@@ -213,6 +232,7 @@ const RATE_WINDOW_MS = 60_000
 const CREATE_MAX_PER_WINDOW = 5
 const CLOSE_MAX_PER_WINDOW = 10
 const UPDATE_MAX_PER_WINDOW = 10
+const LEAVE_MAX_PER_WINDOW = 10
 // CYJ-31: bound the code-collision retry (see handleCreateRoom). 32^6 ≈ 1.07B
 // possible codes, so three fresh draws make a persistent collision effectively
 // impossible; beyond the bound the decision layer returns an explicit 409.
@@ -220,6 +240,7 @@ const MAX_INSERT_ATTEMPTS = 3
 const createHits = new Map<string, number[]>()
 const closeHits = new Map<string, number[]>()
 const updateHits = new Map<string, number[]>()
+const leaveHits = new Map<string, number[]>()
 
 function writeThrottled(
   hits: Map<string, number[]>,
@@ -507,6 +528,80 @@ async function handleCloseRoom(req: Request): Promise<Response> {
   return json(decision.body, 200, headers)
 }
 
+// CYJ-32: a signed-in non-host removes their own room_players row. Mirrors
+// handleCloseRoom step for step: auth boundary → parse → room select →
+// membership select → decision (403 before any write) → post-decision
+// throttle → DELETE. The DELETE predicate repeats room_id + user_id so
+// PostgREST itself refuses to touch any other row; the host check is the
+// decision layer's job (a host's DELETE can never run — defense in depth:
+// the client never sends it).
+async function handleLeaveRoom(req: Request): Promise<Response> {
+  const headers = withCors(new Headers())
+
+  // Auth boundary first, same as the other write routes: a session-less
+  // caller gets 401 regardless of body shape.
+  const session = await resolveUserId(
+    req.headers.get('cookie'),
+    req.headers.get('x-cyj-session'),
+    lookupSession,
+  )
+  if (session.kind !== 'ok') {
+    return json({ error: 'no session' }, 401, headers)
+  }
+  const userId = session.row.user_id
+
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return json({ error: 'request body must be JSON' }, 400, headers)
+  }
+  const parsed = parseLeaveRoomBody(body)
+  if (!parsed.ok) {
+    return json({ error: parsed.reason }, 400, headers)
+  }
+
+  const selected = await selectRoomById(parsed.roomId)
+  if (!selected.ok) {
+    console.error(`room-authority: leave-room lookup failed for room ${parsed.roomId}`)
+    return json({ error: 'room lookup failed' }, 500, headers)
+  }
+  const membership = await selectMembership(parsed.roomId, userId)
+  if (!membership.ok) {
+    console.error(`room-authority: leave-room membership lookup failed for room ${parsed.roomId}`)
+    return json({ error: 'membership lookup failed' }, 500, headers)
+  }
+  const decision = leaveRoomDecision({
+    userId,
+    room: selected.row,
+    membership: membership.row ? { userId: membership.row.user_id, isHost: membership.row.is_host } : null,
+  })
+  if (decision.status !== 200) {
+    return json(decision.body, decision.status, headers)
+  }
+
+  // Same throttle discipline as close-room: only requests that passed auth,
+  // validation, and the membership decision count against the budget.
+  if (writeThrottled(leaveHits, userId, LEAVE_MAX_PER_WINDOW)) {
+    return json({ error: 'too many leave requests, try again in a minute' }, 429, headers)
+  }
+
+  const deleted = await rest(
+    `/room_players?room_id=eq.${encodeURIComponent(parsed.roomId)}&user_id=eq.${userId}`,
+    {
+      method: 'DELETE',
+      headers: { Prefer: 'return=representation' },
+    },
+  )
+  if (!deleted.ok) {
+    console.error(`room-authority: leave-room DELETE failed: HTTP ${deleted.status}`)
+    return json({ error: 'room leave failed' }, 500, headers)
+  }
+  // An empty representation (a concurrent leave won the race) is an
+  // idempotent 200 — the caller is out of the room either way, never a 500.
+  return json(decision.body, 200, headers)
+}
+
 // CYJ-28: host-only settings persistence. Mirrors handleCloseRoom step for
 // step: auth boundary → parse → select → ownership decision (403 before any
 // write) → throttle (post-decision only) → PATCH with the owner predicate as
@@ -638,5 +733,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (path.endsWith('/create-room')) return handleCreateRoom(req)
   if (path.endsWith('/close-room')) return handleCloseRoom(req)
   if (path.endsWith('/update-room')) return handleUpdateRoom(req)
+  if (path.endsWith('/leave-room')) return handleLeaveRoom(req)
   return json({ error: 'not found' }, 404, withCors(new Headers()))
 })
