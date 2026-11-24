@@ -4,6 +4,7 @@ import { PlayerAvatar } from '../ui/PlayerAvatar'
 import { QUICK_CHAT } from '../mock/data'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
 import { fetchRoom, leaveRoom, type FetchRoomResult } from '../rooms/roomClient'
+import { capitalizeName } from '../lib/capitalizeName'
 import './WaitingRoom.css'
 
 /** S5 — Waiting Room. CYJ-24: renders the REAL room fetched from
@@ -238,10 +239,10 @@ export default function WaitingRoom() {
               ) : (
                 // The server sends no identity color — assign one by index,
                 // matching the Lobby header pattern (var(--player-N)).
-                <PlayerAvatar name={p.name} colorVar={`var(--player-${(i % 5) + 1})`} size={44} />
+                <PlayerAvatar name={capitalizeName(p.name)} colorVar={`var(--player-${(i % 5) + 1})`} size={44} />
               )}
               <span className="waiting-player-name">
-                {p.name}
+                {capitalizeName(p.name)}
                 {me && p.userId === me.id && ' (you)'}
               </span>
               {p.isHost && <span className="chip">HOST</span>}

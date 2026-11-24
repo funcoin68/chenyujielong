@@ -6,6 +6,7 @@ import { PlayerAvatar } from '../ui/PlayerAvatar'
 import { RoomSettings, defaultRoomName, type RoomSettingsValues } from './RoomSettings'
 import { LOBBY_ROOMS, PROFILE, RECENT_GAMES, ROOM } from '../mock/data'
 import { fetchCurrentUser, type AuthUser } from '../auth/sessionClient'
+import { capitalizeName } from '../lib/capitalizeName'
 import { saveSessionToken } from '../auth/sessionToken'
 import { closeRoom, createRoom, fetchActiveRoom, fetchJoinedRooms, fetchRoomIdByCode, joinRoom, type ActiveRoom, type JoinedRoom } from '../rooms/roomClient'
 import './Lobby.css'
@@ -83,7 +84,7 @@ export default function Lobby() {
       cancelled = true
     }
   }, [])
-  const displayName = authUser?.display_name ?? PROFILE.name
+  const displayName = capitalizeName(authUser?.display_name ?? PROFILE.name)
 
   // CYJ-28: screens that redirect here (e.g. a failed room read on the
   // settings route) hand over a one-shot notice via router location state.
@@ -377,7 +378,7 @@ export default function Lobby() {
                       <span className="lobby-room-name">{room.name ?? 'Untitled room'}</span>
                       <span className="lobby-room-meta">
                         <span className="chip">{room.code}</span>
-                        <span className="chip">Host: {room.hostName}</span>
+                        <span className="chip">Host: {capitalizeName(room.hostName)}</span>
                       </span>
                     </div>
                     <button
