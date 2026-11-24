@@ -6,6 +6,7 @@
 import { FUNCTIONS_URL } from '../config'
 import { readSessionToken } from '../auth/sessionToken'
 import type { ActiveRoomSummary } from '../lib/room/activeRoom.ts'
+import type { JoinedRoomSummary } from '../lib/room/joinedRooms.ts'
 import type { RoomDetail, RoomPlayerSummary } from '../lib/room/getRoom.ts'
 
 export interface RoomSettingsPayload {
@@ -136,6 +137,76 @@ export async function fetchActiveRoom(): Promise<FetchActiveRoomResult> {
     return { kind: 'error', message: 'game server returned an invalid response' }
   }
   return { kind: 'ok', room: { roomId: room.roomId, code: room.code, name: room.name, status } }
+}
+
+/**
+ * The rooms the caller joined but does not host, as rendered by the Lobby's
+ * joined-rooms section. Alias of the shared decision-layer contract
+ * (JoinedRoomSummary) — one shape, client and Edge Function (rule 11).
+ */
+export type JoinedRoom = JoinedRoomSummary
+
+export type FetchJoinedRoomsResult =
+  | { kind: 'ok'; rooms: JoinedRoom[] }
+  | { kind: 'unauthorized' }
+  | { kind: 'error'; message: string }
+
+/**
+ * CYJ-34: read the signed-in user's joined (non-hosted) rooms for the Lobby's
+ * "Rooms you've joined" section. Read-only; same transport pattern as
+ * fetchActiveRoom (cookie + x-cyj-session fallback). An empty list is a
+ * normal empty state, not an error; every failure is a visible error result,
+ * never fixture data (rule 12).
+ */
+export async function fetchJoinedRooms(): Promise<FetchJoinedRoomsResult> {
+  if (!FUNCTIONS_URL) return { kind: 'error', message: 'game server is not configured' }
+  const token = readSessionToken()
+  let res: Response
+  try {
+    res = await fetch(`${FUNCTIONS_URL}/room-authority/joined-rooms`, {
+      credentials: 'include',
+      headers: token ? { 'x-cyj-session': token } : {},
+    })
+  } catch (err) {
+    return { kind: 'error', message: `network error: ${String(err)}` }
+  }
+  if (res.status === 401) {
+    await res.body?.cancel()
+    return { kind: 'unauthorized' }
+  }
+  let body: { rooms?: unknown; error?: unknown } = {}
+  try {
+    body = await res.json()
+  } catch {
+    /* non-JSON error body — fall through to the status-based message */
+  }
+  if (!res.ok) {
+    const detail = typeof body.error === 'string' ? `: ${body.error}` : ` (HTTP ${res.status})`
+    return { kind: 'error', message: `could not load joined rooms${detail}` }
+  }
+  if (!Array.isArray(body.rooms)) {
+    return { kind: 'error', message: 'game server returned an invalid response' }
+  }
+  const rooms: JoinedRoom[] = []
+  for (const entry of body.rooms) {
+    if (typeof entry !== 'object' || entry === null) {
+      return { kind: 'error', message: 'game server returned an invalid response' }
+    }
+    const room = entry as Record<string, unknown>
+    if (
+      typeof room.roomId !== 'string' ||
+      room.roomId === '' ||
+      typeof room.code !== 'string' ||
+      room.code === '' ||
+      (typeof room.name !== 'string' && room.name !== null) ||
+      typeof room.hostName !== 'string' ||
+      room.hostName === ''
+    ) {
+      return { kind: 'error', message: 'game server returned an invalid response' }
+    }
+    rooms.push({ roomId: room.roomId, code: room.code, name: room.name, hostName: room.hostName })
+  }
+  return { kind: 'ok', rooms }
 }
 
 export type FetchRoomResult =
