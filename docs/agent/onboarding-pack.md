@@ -2,7 +2,7 @@
 <!-- GENERATED FILE — do not edit by hand. Narrative sections come from
      docs/agent/pack-curated.md; mechanical sections from git. Regenerate:
      python scripts/build_context_pack.py (nightly workflow opens the PR). -->
-<!-- source commit: fe3c73c · generated: 2026-11-24 · pack owner: funcoin68 -->
+<!-- source commit: 7738795 · generated: 2026-11-28 · pack owner: funcoin68 -->
 
 ## 0. Mission
 成语接龙 (Chinese idiom-chain) multiplayer web game — players take turns
@@ -12,7 +12,7 @@ infrastructure (scripts/, .github/workflows/) lives in the same repo as the
 game. Keep game code and pipeline code conceptually separate.
 
 ## 1. Module map
-- `src/lib/` (26 files) — Shared rule primitives (Deno Edge Function + Vitest both import). activeRoom.test.ts, activeRoom.ts, chain.test.ts, chain.ts, closeRoom.test.ts, closeRoom.ts, code.test.ts, code.ts … (+18)
+- `src/lib/` (34 files) — Shared rule primitives (Deno Edge Function + Vitest both import). activeRoom.test.ts, activeRoom.ts, capitalizeName.test.ts, capitalizeName.ts, chain.test.ts, chain.ts, closeRoom.test.ts, closeRoom.ts … (+26)
 - `src/lib/auth/` (8 files) — Google OAuth flow + session logic (shared Deno + Vitest, CYJ-7). edgeCallback.test.ts, flow.test.ts, flow.ts, googleIdToken.test.ts, googleIdToken.ts, session.test.ts, session.ts, sessionResolutionShared.test.ts
 - `src/screens/` (23 files) — Route-level screens (spec §3). AuthCallback.css, AuthCallback.test.tsx, AuthCallback.tsx, Gameplay.css, Gameplay.tsx, Landing.css, Landing.test.tsx, Landing.tsx … (+15)
 - `src/ui/` (13 files) — Reusable components (one CSS per component). ChainView.css, ChainView.tsx, CodeInput.css, CodeInput.tsx, IdiomTile.css, IdiomTile.tsx, Modal.css, Modal.test.tsx … (+5)
@@ -111,21 +111,21 @@ Trust the mechanical migrations list below over this prose.
 
 ## 7. Hotspots & ownership
 App code (most-changed first, last 90d — high churn = review carefully, keep tests close):
-- `src/screens/Lobby.tsx` — 18 commits
-- `src/screens/Lobby.test.tsx` — 16 commits
-- `supabase/functions/room-authority/index.ts` — 14 commits
+- `src/screens/Lobby.tsx` — 21 commits
+- `src/screens/Lobby.test.tsx` — 19 commits
+- `supabase/functions/room-authority/index.ts` — 17 commits
+- `src/rooms/roomClient.ts` — 11 commits
 - `src/screens/Landing.test.tsx` — 9 commits
 - `supabase/functions/auth/index.ts` — 9 commits
 - `src/screens/Landing.tsx` — 9 commits
-- `src/rooms/roomClient.ts` — 8 commits
 - `src/auth/sessionClient.ts` — 8 commits
+- `src/screens/WaitingRoom.test.tsx` — 7 commits
+- `src/screens/WaitingRoom.tsx` — 7 commits
 - `src/auth/sessionClient.test.ts` — 7 commits
+- `src/screens/Lobby.css` — 6 commits
+- `src/rooms/roomClient.test.ts` — 6 commits
 - `src/App.render.test.tsx` — 6 commits
 - `src/lib/auth/flow.test.ts` — 6 commits
-- `src/lib/auth/flow.ts` — 6 commits
-- `src/screens/Lobby.css` — 5 commits
-- `src/lib/auth/session.test.ts` — 5 commits
-- `src/lib/auth/session.ts` — 5 commits
 
 Pipeline infrastructure (churn here = pipeline debugging, not app risk):
 - `.github/workflows/stage5-implement.yml` — 11 commits
@@ -137,23 +137,23 @@ Pipeline infrastructure (churn here = pipeline debugging, not app risk):
 Ownership: single service `idiom-game` (repo-registry.yaml), owner funcoin68, risk tier 3. `.github/workflows/` is human-owned — workflow diffs from an agent are auto-reverted.
 
 ## 8. Recent decisions (rolling, last 90 days, from git log)
+- 2026-11-24 — CYJ-35: capitalize first letters of first/last name in all name displays
+- 2026-11-24 — CYJ-34 checkpoint 4: Lobby joined-rooms section + tests
+- 2026-11-24 — CYJ-34 checkpoint 3: fetchJoinedRooms client + tests
+- 2026-11-24 — CYJ-34 checkpoint 2: joined-rooms GET endpoint in room-authority
+- 2026-11-24 — CYJ-34 checkpoint 1: joined-rooms decision layer + tests
+- 2026-11-24 — CYJ-33 checkpoint 5: WaitingRoom observer notice + membership-gated Leave Room
+- 2026-11-24 — CYJ-33 checkpoint 4: Lobby join chains lookup → join-room mutation → navigate
+- 2026-11-24 — CYJ-33 checkpoint 3: joinRoom client transport + tests
+- 2026-11-24 — CYJ-33 checkpoint 2: join-room Edge Function handler + route
+- 2026-11-24 — CYJ-33 checkpoint 1: join-room decision layer + tests
+- 2026-11-24 — chore: regenerate onboarding pack (2026-11-24)
+- 2026-11-24 — CYJ-32 checkpoint 4: WaitingRoom Leave Room action for non-hosts with loud failure
+- 2026-11-24 — CYJ-32 checkpoint 3: POST /room-authority/leave-room Edge Function route
+- 2026-11-24 — CYJ-32 checkpoint 2: leaveRoom client transport (ok/unauthorized/forbidden/not-found/error)
+- 2026-11-24 — CYJ-32 checkpoint 1: leave-room decision layer (401/404/403/200 mapping)
 - 2026-11-24 — CYJ-31: join-by-code lookup via room-authority, inline errors on unknown code
 - 2026-11-23 — CYJ-30: derive MemoryRouter initial-entry type to fix TS2305
-- 2026-11-23 — agent: address review comments (round 3)
-- 2026-11-23 — agent: address review comments (round 2)
-- 2026-11-23 — agent: address review comments (round 1)
-- 2026-11-23 — CYJ-28 checkpoint 4: settings screen UI, lobby notice, WaitingRoom gear, route
-- 2026-11-23 — CYJ-28 checkpoint 3: update-room Edge Function handler + client transport
-- 2026-11-23 — CYJ-28 checkpoint 2: update-room decision layer + settings fields on room detail
-- 2026-11-23 — CYJ-28 checkpoint 1: failing tests for update-room decision layer + settings screen
-- 2026-11-23 — CYJ-27: default create-room name from signed-in user's display_name
-- 2026-11-23 — CYJ-29: type mockFetch spy as typeof fetch to fix 6 TS2493 errors
-- 2026-11-23 — agent: address review comments (round 1)
-- 2026-11-23 — CYJ-26: invalidateSessionCache also drops dangling in-flight promise
-- 2026-11-23 — CYJ-26: integration test — Landing → Lobby → Enter Room costs one /me fetch
-- 2026-11-23 — CYJ-26: sign-out clears client session; reset session cache in screen tests
-- 2026-11-23 — CYJ-26: cache /me session lookup with in-flight dedupe
-- 2026-11-23 — fix broken query
 - 2026-11-23 — agent: address review comments (round 3)
 - 2026-11-23 — agent: address review comments (round 2)
 - 2026-11-23 — agent: address review comments (round 1)
